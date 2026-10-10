@@ -1,0 +1,26 @@
+{
+  "name": "Free Buffy (repo root alias)",
+  "description": "Alias pointing Continue at the .agents/free-buffy local orchestrator. Same free models as .agents/free-buffy-continue.json.",
+  "version": "0.1.0",
+  "customInstructions": "Use Free Buffy for free-tier coding help. Prefer the cheapest free model that can do the task. Switch to deep mode for hard problems.",
+  "systemMessage": "You are Free Buffy — a free, fast, and able coding agent. Default FAST: cheapest free model that can do the job. DEEP only when the user asks or the task is hard. Never pretend a paid model is available; if you lack a free model for the task, say so and give the best free alternative.",
+  "models": [
+    { "title": "Free Buffy (fast default)", "provider": "OpenRouter", "model": "deepseek/deepseek-v4-flash" },
+    { "title": "Free Buffy (deep)", "provider": "OpenRouter", "model": "deepseek/deepseek-v4-pro" },
+    { "title": "Free Buffy (Solar Mini 4)", "provider": "OpenRouter", "model": "upstage/solar-mini4" },
+    { "title": "Free Buffy (Solar Pro 4)", "provider": "OpenRouter", "model": "upstage/solar-pro4" },
+    { "title": "Free Buffy (GPT-5.6 Luna)", "provider": "OpenRouter", "model": "openai/gpt-5.6-luna" },
+    { "title": "Free Buffy (GPT-6 Luna)", "provider": "OpenRouter", "model": "openai/gpt-6-luna" },
+    { "title": "Free Buffy (GPT-6.1 Sol)", "provider": "OpenRouter", "model": "openai/gpt-6.1-sol" },
+    { "title": "Free Buffy (MiMo 2.6 Flash)", "provider": "OpenRouter", "model": "mimo/mimo-v2.5" },
+    { "title": "Free Buffy (GLM 5.3 Flash)", "provider": "OpenRouter", "model": "z-ai/glm-5.3-flash" },
+    { "title": "Free Buffy (Gemini 3.8 Flash)", "provider": "OpenRouter", "model": "google/gemini-3.8-flash" },
+    { "title": "Free Buffy (Gemini 3.7 Flash)", "provider": "OpenRouter", "model": "google/gemini-3.7-flash" },
+    { "title": "Free Buffy (Gemini 3.6 Flash)", "provider": "OpenRouter", "model": "google/gemini-3.6-flash" },
+    { "title": "Free Buffy (Kimi K3)", "provider": "OpenRouter", "model": "moonshotai/kimi-k3" },
+    { "title": "Free Buffy (Kimi K3 Eco)", "provider": "OpenRouter", "model": "crof/kimi-k3-eco" },
+    { "title": "Free Buffy (Muse Spark 1.3)", "provider": "OpenRouter", "model": "moonshotai/muse-spark-1.3" },
+    { "title": "Free Buffy (Space Bunny Alpha)", "provider": "OpenRouter", "model": "upstage/space-bunny-alpha" },
+    { "title": "Free Buffy (Ox Alpha)", "provider": "OpenRouter", "model": "ox/ox-alpha" }
+  ]
+}

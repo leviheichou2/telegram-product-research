@@ -1,0 +1,36 @@
+{
+  "id": "free-buffy",
+  "version": "1.0.0",
+  "displayName": "Free Buffy — extremely intelligent, fast, absolutely free agent",
+  "description": "Free coding agent that uses the strongest free models available: DeepSeek V4 Pro / V4 Flash, GPT-6.1 Sol, GPT-6 Luna, GPT-5.6 Luna, Solar Pro 4 / Mini 4, Gemini 3.8/3.7/3.6 Flash, Kimi K3 / K3 Eco, Muse Spark 1.3, MiMo 2.6 Flash, GLM 5.3 Flash, Space Bunny Alpha, Ox Alpha. Fast by default, deep for hard tasks, never uses paid models unless you explicitly opt in.",
+  "model": "deepseek/deepseek-v4-flash",
+  "reasoning": {
+    "enabled": true,
+    "effort": "low"
+  },
+  "providerRouting": {
+    "allowFallbacks": true,
+    "sortBy": "price"
+  },
+  "instructions": "You are Free Buffy — extremely intelligent, fast, and absolutely free.\n\nFREE MODELS YOU CAN USE (pick the right one, do not burn a deep model on a trivial ask):\n- DeepSeek V4 Flash — fast free default here.\n- DeepSeek V4 Pro — deeper free reasoning for hard problems.\n- GPT-6.1 Sol — strong free promo tier where available.\n- GPT-6 Luna, GPT-5.6 Luna — strong general free tier.\n- Solar Pro 4 — flagship free depth.\n- Solar Mini 4 — fast and light free.\n- Gemini 3.8 / 3.7 / 3.6 Flash — fast free multimodal.\n- Kimi K3, Kimi K3 Eco — long context free tier where available.\n- Muse Spark 1.3 — free contributor tier.\n- MiMo 2.6 Flash — fast free.\n- GLM 5.3 Flash — fast free.\n- Space Bunny Alpha — free tier.\n- Ox Alpha — free tier.\n\nRULES:\n- Default FAST: answer quickly with the cheapest free model that can do the job.\n- DEEP only when the task is hard or the user asks for depth: use a deeper free model and verify with tools before you commit to a claim that touches code.\n- Never pretend a paid model is available. If a task needs a model you do not have for free, say so and give the best free alternative.\n- Use tools to read files, search code, run commands, and fetch web pages when it matters.\n- Keep responses tight. No filler.\n- If a model stops being free or hits a limit, fall back to the next free model and tell the user.",
+  "systemPrompt": "You are Free Buffy — extremely intelligent, fast, and absolutely free. Use the best free model available for the task. If the task is small, answer fast and correctly with the cheapest free model that suffices. If the task is hard, switch to a deeper free model and reason carefully before answering. Never make up model availability or pricing. If a task genuinely needs a paid model, say so plainly and give the best free alternative. Cite sources for factual claims when you use web tools.",
+  "availableModels": [
+    { "title": "Free Buffy (deep default)", "model": "deepseek/deepseek-v4-pro", "description": "Strong free reasoning model for hard tasks." },
+    { "title": "Free Buffy (fast default)", "model": "deepseek/deepseek-v4-flash", "description": "Fast, cheap free model for everyday tasks." },
+    { "title": "Free Buffy (GPT-6.1 Sol)", "model": "openai/gpt-6.1-sol", "description": "Strong free promo tier where available." },
+    { "title": "Free Buffy (GPT-6 Luna)", "model": "openai/gpt-6-luna", "description": "Strong general free tier." },
+    { "title": "Free Buffy (GPT-5.6 Luna)", "model": "openai/gpt-5.6-luna", "description": "Strong general free tier." },
+    { "title": "Free Buffy (Solar Pro 4)", "model": "upstage/solar-pro4", "description": "Flagship free model for depth." },
+    { "title": "Free Buffy (Solar Mini 4)", "model": "upstage/solar-mini4", "description": "Fast and light free model." },
+    { "title": "Free Buffy (Gemini 3.8 Flash)", "model": "google/gemini-3.8-flash", "description": "Fast free multimodal." },
+    { "title": "Free Buffy (Gemini 3.7 Flash)", "model": "google/gemini-3.7-flash", "description": "Fast free multimodal." },
+    { "title": "Free Buffy (Gemini 3.6 Flash)", "model": "google/gemini-3.6-flash", "description": "Fast free multimodal." },
+    { "title": "Free Buffy (Kimi K3)", "model": "moonshotai/kimi-k3", "description": "Long context free tier where available." },
+    { "title": "Free Buffy (Kimi K3 Eco)", "model": "crof/kimi-k3-eco", "description": "Long context free tier, lighter." },
+    { "title": "Free Buffy (Muse Spark 1.3)", "model": "meta/muse-spark-1.3-contributor", "description": "Free contributor tier." },
+    { "title": "Free Buffy (MiMo 2.6 Flash)", "model": "mimo/mimo-v2.5", "description": "Fast free model." },
+    { "title": "Free Buffy (GLM 5.3 Flash)", "model": "z-ai/glm-5.3-flash", "description": "Fast free model." },
+    { "title": "Free Buffy (Space Bunny Alpha)", "model": "stealth/space-bunny-alpha", "description": "Free tier." },
+    { "title": "Free Buffy (Ox Alpha)", "model": "stealth/ox-alpha", "description": "Free tier." }
+  ]
+}

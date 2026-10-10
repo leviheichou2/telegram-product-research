@@ -1,0 +1,3994 @@
+<!doctype html>
+
+<html lang="en">
+
+<head>
+
+  <meta charset="utf-8">
+
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+
+  <title>Wholesale Product Research</title>
+
+  <style>
+
+    :root {
+
+      color-scheme: light;
+
+      font-family: "Segoe UI", Arial, sans-serif;
+
+      color: #243247;
+
+      background: #f3f6fa;
+
+      --teal: #078c9c;
+
+      --blue: #397fbd;
+
+      --line: #dfe6ef;
+
+      --muted: #748196;
+
+    }
+
+    * { box-sizing: border-box; }
+
+    body { margin: 0; min-width: 360px; }
+
+    [hidden] { display: none !important; }
+
+    button, input, select, textarea { font: inherit; }
+
+    button { border: 1px solid transparent; border-radius: 6px; padding: 9px 13px; color: white; background: var(--teal); font-weight: 650; cursor: pointer; }
+
+    button.secondary { border-color: var(--line); color: #3f526b; background: #fff; }
+
+    button:disabled { opacity: .55; cursor: wait; }
+
+    a { color: #167d9b; text-decoration: none; }
+
+    a:hover { text-decoration: underline; }
+
+    h1, h2, h3, p { margin-top: 0; }
+
+    h1 { margin-bottom: 5px; color: #202b3b; font-size: 27px; }
+
+    h2 { margin-bottom: 6px; font-size: 18px; }
+
+    h3 { margin: 0; font-size: 15px; }
+
+    .app-shell { min-height: 100vh; display: grid; grid-template-columns: 250px minmax(0, 1fr); }
+
+    .sidebar { position: sticky; top: 0; height: 100vh; display: flex; flex-direction: column; padding: 23px 15px 16px; border-right: 1px solid var(--line); background: #fff; }
+
+    .brand { display: flex; align-items: center; gap: 11px; margin: 0 9px 34px; color: #23364c; font-size: 20px; font-weight: 750; }
+
+    .brand-mark { width: 38px; height: 38px; display: grid; place-items: center; border-radius: 10px; color: #fff; background: var(--teal); font-size: 21px; }
+
+    .sidebar-label { margin: 0 10px 9px; color: #8b96a6; font-size: 11px; font-weight: 750; letter-spacing: .09em; }
+
+    .side-nav { display: grid; gap: 5px; }
+
+    .side-nav a { display: flex; align-items: center; gap: 11px; padding: 11px 12px; border-radius: 7px; color: #5d6b7e; font-size: 14px; }
+
+    .side-nav a:hover, .side-nav a.active { color: #087e90; background: #e8f5f7; text-decoration: none; }
+
+    .side-nav .nav-icon { width: 20px; text-align: center; font-size: 17px; }
+
+    .sidebar-spacer { flex: 1; }
+
+    .local-note { padding: 12px; border: 1px solid #e6edf3; border-radius: 8px; color: #66758a; background: #f8fafc; font-size: 12px; line-height: 1.5; }
+
+    .workspace { min-width: 0; }
+
+    .topbar { min-height: 57px; display: flex; align-items: center; justify-content: space-between; gap: 15px; padding: 0 25px; border-bottom: 1px solid var(--line); background: #fff; }
+
+    .top-nav { display: flex; align-items: center; gap: 26px; height: 57px; }
+
+    .top-nav a { height: 100%; display: flex; align-items: center; border-bottom: 2px solid transparent; color: #657286; font-size: 14px; }
+
+    .top-nav a.active { border-color: var(--teal); color: #087e90; font-weight: 650; }
+
+    .top-actions { display: flex; align-items: center; gap: 10px; color: #6d7b8f; font-size: 13px; }
+
+    .status-dot { width: 8px; height: 8px; display: inline-block; border-radius: 50%; background: #35ae72; }
+
+    main { max-width: 1800px; margin: 0 auto; padding: 24px 25px 48px; }
+
+    .page-heading { display: flex; align-items: end; justify-content: space-between; gap: 16px; margin-bottom: 19px; }
+
+    .eyebrow { margin-bottom: 5px; color: var(--teal); font-size: 11px; font-weight: 750; letter-spacing: .1em; }
+
+    .muted { color: var(--muted); }
+
+    .page-heading p, .panel-intro { margin-bottom: 0; color: var(--muted); font-size: 13px; }
+
+    .heading-actions { display: flex; gap: 8px; flex-wrap: wrap; }
+
+    .metric-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 15px; margin-bottom: 16px; }
+
+    .metric-card { min-height: 132px; padding: 18px; border: 1px solid var(--line); border-top: 4px solid var(--blue); border-radius: 6px; background: #fff; box-shadow: 0 2px 5px #20334b08; cursor: pointer; }
+    .metric-card:hover { border-color: #91cbd0; box-shadow: 0 3px 12px #078c9c20; }
+
+    .metric-card:nth-child(2) { border-top-color: #22a7c4; }
+
+    .metric-card:nth-child(3) { border-top-color: #43a469; }
+
+    .metric-card:nth-child(4) { border-top-color: #e3a300; }
+
+    .metric-label { display: flex; justify-content: space-between; gap: 9px; color: #657286; font-size: 13px; font-weight: 600; }
+
+    .metric-value { margin: 15px 0 3px; color: #29394f; font-size: 30px; font-weight: 700; line-height: 1; }
+
+    .metric-foot { color: #8994a4; font-size: 12px; }
+
+    .overview-grid { display: grid; grid-template-columns: minmax(280px, .9fr) minmax(380px, 1.5fr); gap: 15px; margin-bottom: 17px; }
+
+    .panel { min-width: 0; padding: 17px 19px; border: 1px solid var(--line); border-radius: 6px; background: #fff; box-shadow: 0 2px 5px #20334b08; }
+
+    .panel-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 15px; }
+
+    .panel-head p { margin: 3px 0 0; color: var(--muted); font-size: 12px; }
+
+    #priority-chart { display: grid; gap: 11px; }
+
+    .chart-row { display: grid; grid-template-columns: minmax(90px, 1fr) minmax(100px, 2fr) 35px; align-items: center; gap: 10px; color: #657286; font-size: 12px; }
+
+    .chart-track { height: 8px; overflow: hidden; border-radius: 5px; background: #edf1f5; }
+
+    .chart-fill { height: 100%; border-radius: inherit; background: #20a0ad; }
+
+    .snapshot-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+
+    .snapshot-item { min-height: 69px; padding: 12px; border: 1px solid #e9edf3; border-radius: 5px; }
+
+    .snapshot-item strong { display: block; margin-bottom: 4px; color: #33435a; font-size: 17px; }
+
+    .snapshot-item span { color: var(--muted); font-size: 12px; }
+
+    .scan-panel { margin-bottom: 17px; padding: 0; }
+
+    .scan-panel > summary { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 16px 19px; cursor: pointer; list-style: none; }
+
+    .scan-panel > summary::-webkit-details-marker { display: none; }
+
+    .scan-panel > summary:after { content: "+"; color: var(--teal); font-size: 22px; }
+
+    .scan-panel[open] > summary:after { content: "−"; }
+
+    .scan-panel-body { padding: 0 19px 18px; border-top: 1px solid #edf0f4; }
+
+    .scan-layout { display: grid; grid-template-columns: minmax(280px, .8fr) minmax(360px, 1.2fr); gap: 22px; padding-top: 17px; }
+
+    .scan-layout label, .research-box label { display: grid; gap: 5px; color: #536176; font-size: 12px; font-weight: 650; }
+
+    .scan-layout input, .scan-layout select, .research-box input, .research-box select, .research-box textarea, .toolbar input, .toolbar select { min-width: 0; border: 1px solid #cfd8e3; border-radius: 5px; padding: 8px; color: #344257; background: #fff; }
+
+    .row { display: flex; align-items: end; flex-wrap: wrap; gap: 10px; }
+
+    .chat-tools { display: flex; flex-wrap: wrap; gap: 7px; margin: 10px 0; }
+
+    #chats { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 6px; max-height: 210px; overflow: auto; padding: 2px; }
+
+    .chat-option { display: flex; align-items: center; gap: 8px; padding: 8px; border: 1px solid #e4eaf1; border-radius: 5px; color: #59697e; font-size: 12px; font-weight: 400; }
+
+    .chat-option input { margin: 0; }
+
+    .selection-summary { margin: 8px 0; color: #6a788b; font-size: 12px; }
+
+    #status { margin-top: 12px; padding: 10px 12px; border-radius: 5px; color: #456076; background: #eff6fa; font-size: 13px; }
+
+    #status.error { color: #922; background: #fff0f0; white-space: pre-wrap; }
+
+    .scan-progress { height: 7px; margin-top: 9px; overflow: hidden; border-radius: 5px; background: #e4e9ef; }
+
+    .scan-progress span { width: 100%; height: 100%; display: block; transform-origin: left; background: #28a36e; transition: transform .3s; }
+
+    .scan-progress.running span { width: 35%; animation: scan-pulse 1s ease-in-out infinite alternate; }
+
+    @keyframes scan-pulse { from { transform: translateX(0); } to { transform: translateX(185%); } }
+
+    .results-panel { padding: 0; overflow: hidden; }
+
+    .results-heading { display: flex; align-items: end; justify-content: space-between; gap: 14px; padding: 18px 19px 13px; }
+
+    .results-heading h2 { margin: 0; }
+
+    #scan-summary { margin-top: 5px; color: var(--muted); font-size: 12px; }
+
+    .toolbar { min-height: 54px; display: flex; align-items: center; justify-content: space-between; gap: 11px; padding: 9px 14px; border-top: 1px solid #edf0f4; border-bottom: 1px solid var(--line); background: #fafbfd; }
+
+    .toolbar-left, .toolbar-right { display: flex; align-items: center; gap: 8px; min-width: 0; }
+
+    .toolbar input { width: min(300px, 28vw); }
+
+    .toolbar select { max-width: 170px; padding: 8px; }
+
+    .result-count, .page-status { color: #66758a; font-size: 12px; white-space: nowrap; }
+
+    .pager { display: flex; align-items: center; gap: 5px; }
+
+    .pager button { padding: 6px 9px; color: #4e6075; background: #fff; border-color: var(--line); }
+
+    .table-wrap { width: 100%; overflow: auto; }
+
+    table { width: 100%; min-width: 1500px; border-collapse: collapse; font-size: 13px; }
+
+    th, td { max-width: 330px; padding: 11px 10px; border-bottom: 1px solid #e7ebf1; text-align: left; vertical-align: middle; }
+
+    th { position: sticky; top: 0; z-index: 1; color: #43536a; background: #f1f4f8; font-size: 12px; font-weight: 700; white-space: nowrap; }
+
+    tbody tr:hover { background: #f8fbfd; }
+
+    .product-image { width: 58px; height: 52px; border: 1px solid #e7ebf1; border-radius: 4px; object-fit: contain; background: #fff; }
+
+    .product-cell { min-width: 180px; display: flex; align-items: center; gap: 9px; }
+
+    .product-cell strong { color: #31445c; }
+
+    .description-cell { min-width: 200px; max-width: 300px; color: #637186; font-size: 12px; line-height: 1.45; }
+
+    .price-list { min-width: 170px; max-height: 90px; overflow: auto; }
+
+    .price-list p { margin: 3px 0; font-size: 12px; }
+
+    .score { display: inline-block; padding: 5px 9px; border-radius: 14px; color: #176244; background: #e4f5ec; font-weight: 800; white-space: nowrap; }
+
+    .offer-list { min-width: 190px; }
+
+    .offer-item { padding: 8px 0; border-bottom: 1px solid #edf0f5; }
+
+    .offer-item:last-child { border-bottom: 0; }
+
+    .offer-item p { margin: 5px 0; font-size: 12px; }
+
+    .offer-item img { max-width: 100px; max-height: 88px; display: block; object-fit: contain; margin-top: 6px; }
+
+    .research-box { min-width: 280px; max-width: 380px; display: grid; gap: 8px; padding: 9px 0; }
+
+    .research-box textarea { min-height: 56px; resize: vertical; }
+
+    .research-links { display: flex; flex-wrap: wrap; gap: 7px 11px; font-size: 12px; }
+
+    .research-item { min-width: 130px; }
+
+    .competitor-item { padding: 7px 0; border-bottom: 1px solid #edf0f5; font-size: 12px; }
+
+    .competitor-item:last-child { border-bottom: 0; }
+
+    .warning { margin: 0; padding: 10px 14px; border-top: 1px solid #f3e1b0; color: #765817; background: #fff9e9; font-size: 12px; line-height: 1.5; }
+
+    .empty { padding: 19px; color: #748196; }
+
+    .small { font-size: 11px; }
+
+    #login-panel { margin: 10px 0; padding: 12px; border: 1px solid #e1e6ef; border-radius: 6px; background: #f8fafc; }
+
+    .sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0; }
+
+    @media (max-width: 1050px) {
+
+      .app-shell { grid-template-columns: 205px minmax(0, 1fr); }
+
+      .metric-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+
+      .top-nav { gap: 13px; }
+
+      main { padding: 19px 16px 36px; }
+
+    }
+
+    @media (max-width: 700px) {
+
+      .app-shell { display: block; }
+
+      .sidebar { position: static; width: 100%; height: auto; padding: 10px 13px; border-right: 0; border-bottom: 1px solid var(--line); }
+
+      .brand { margin: 0 3px 8px; }
+
+      .sidebar-label, .sidebar-spacer, .local-note { display: none; }
+
+      .side-nav { display: flex; overflow-x: auto; }
+
+      .side-nav a { flex: 0 0 auto; padding: 8px 10px; }
+
+      .topbar { padding: 0 14px; }
+
+      .top-nav { gap: 11px; }
+
+      .top-nav a { font-size: 12px; }
+
+      .top-actions .local-label { display: none; }
+
+      main { padding: 16px 11px 28px; }
+
+      .page-heading { align-items: start; flex-direction: column; }
+
+      .metric-grid { gap: 9px; }
+
+      .metric-card { min-height: 112px; padding: 13px; }
+
+      .metric-value { font-size: 25px; }
+
+      .overview-grid, .scan-layout { grid-template-columns: 1fr; }
+
+      .toolbar { align-items: stretch; flex-direction: column; }
+
+      .toolbar-left, .toolbar-right { flex-wrap: wrap; }
+
+      .toolbar input { width: min(100%, 280px); }
+
+      .results-heading { align-items: start; flex-direction: column; }
+
+    }
+
+  </style>
+
+<style>
+    .conn-status { display:inline-flex; align-items:center; gap:7px; font-size:13px; color:#6d7b8f; }
+    .conn-status .status-dot { width:8px; height:8px; border-radius:50%; display:inline-block; }
+    .conn-status .dot-ok { background:#35ae72; }
+    .conn-status .dot-missing { background:#9aa5b2; }
+    .conn-status .dot-warn { background:#d9a441; }
+    .conn-status strong { color:#243247; font-weight:650; }
+    .conn-actions { display:flex; align-items:center; gap:8px; }
+    .conn-panel { border:1px solid #e1e6ef; border-radius:6px; background:#f8fafc; padding:12px; margin-top:10px; }
+    .conn-panel h3 { margin:0 0 8px; font-size:14px; color:#243247; }
+    .conn-panel p { margin:0 0 10px; color:#66758a; font-size:12px; }
+    .conn-row { display:flex; align-items:end; flex-wrap:wrap; gap:10px; margin-bottom:10px; }
+    .conn-row label { display:grid; gap:5px; color:#536176; font-size:12px; font-weight:650; }
+    .conn-row input { border:1px solid #cfd8e3; border-radius:5px; padding:8px; color:#344257; background:#fff; min-width:0; }
+    .conn-note { font-size:11px; color:#8a96a8; margin-top:6px; }
+    .meta-country-row { display:flex; align-items:center; gap:10px; margin:8px 0 4px; }
+    .meta-country-row label { color:#536176; font-size:12px; font-weight:650; }
+    .meta-country-row select { border:1px solid #cfd8e3; border-radius:5px; padding:7px; color:#344257; background:#fff; }
+    .meta-log { max-height:128px; overflow:auto; font-size:12px; color:#456076; background:#eff6fa; border:1px solid #e1e6ef; border-radius:5px; padding:8px; white-space:pre-wrap; margin-top:8px; }
+    .meta-log.error { color:#922; background:#fff0f0; }
+    .btn-secondary { border:1px solid var(--line); color:#3f526b; background:#fff; border-radius:6px; padding:8px 12px; font:inherit; cursor:pointer; }
+    .btn-secondary:hover { background:#f3f6fa; }
+    .btn-secondary[disabled] { opacity:.55; cursor:wait; }
+    .btn-text { font-size:12px; color:#536176; text-decoration:underline; cursor:pointer; }
+    .btn-text:hover { color:#167d9b; }
+    .hidden { display:none !important; }
+</style>
+<style>
+  .mp-page { margin-top:17px; }
+  .mp-page h3 { margin:0 0 6px; }
+  .mp-page .mp-sub { margin:0 0 10px; color:#66758a; font-size:12px; }
+  .mp-row { display:flex; flex-wrap:wrap; gap:10px; align-items:flex-end; margin-bottom:8px; }
+  .mp-row label { display:grid; gap:4px; font-size:12px; color:#536176; font-weight:650; }
+  .mp-row input, .mp-row select { border:1px solid #cfd8e3; border-radius:5px; padding:7px; background:#fff; color:#344257; min-width:210px; }
+  .mp-btn { border:1px solid var(--line); color:#3f526b; background:#fff; border-radius:6px; padding:7px 12px; font:inherit; cursor:pointer; }
+  .mp-btn.primary { background:#167d9b; color:#fff; border-color:#167d9b; }
+  .mp-btn[disabled] { opacity:.55; cursor:wait; }
+  .mp-out { margin-top:10px; font-size:12px; color:#456076; background:#eff6fa; border:1px solid #e1e6ef; border-radius:5px; padding:8px; white-space:pre-wrap; max-height:320px; overflow:auto; }
+  .mp-out.error { color:#922; background:#fff0f0; }
+  .mp-out pre { margin:0; white-space:pre-wrap; word-break:break-word; font:inherit; }
+  .mp-chatlist { max-height:190px; overflow:auto; border:1px solid #e1e6ef; border-radius:5px; padding:8px; display:grid; grid-template-columns:repeat(auto-fill,minmax(230px,1fr)); gap:5px; font-size:12px; background:#fff; }
+  .mp-chatlist label { display:flex; align-items:center; gap:6px; font-weight:500; color:#3f526b; }
+  .mp-note { font-size:11px; color:#8a96a8; margin:6px 0 0; }
+</style>
+<style>
+    /* ---- page router ---- */
+    .app-page[hidden] { display: none !important; }
+    .nav-link { display: flex; align-items: center; gap: 8px; width: 100%; box-sizing: border-box;
+                background: none; border: 0; text-align: left; font: inherit; color: inherit;
+                padding: 8px 10px; border-radius: 6px; cursor: pointer; text-decoration: none; }
+    .nav-link:hover { background: #f3f6fa; }
+    .nav-link.active { background: #e8f4f8; color: #10657e; font-weight: 650; }
+    .nav-group { justify-content: flex-start; }
+    .nav-sub { display: grid; gap: 2px; margin: 2px 0 6px 14px; border-left: 1px solid #e1e6ef; padding-left: 8px; }
+    .nav-sub[hidden] { display: none; }
+    .nav-sub .nav-link { font-size: 13px; padding: 6px 9px; }
+    .breadcrumb { font-size: 12px; color: #8a96a8; margin: 0 0 10px; }
+    .breadcrumb span { color: #c2cbd6; margin: 0 6px; }
+    /* ---- product profile ---- */
+    .profile-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+    .profile-metrics { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 10px; margin: 14px 0; }
+    .profile-metric { border: 1px solid #e1e6ef; border-radius: 6px; background: #f8fafc; padding: 10px; display: grid; gap: 3px; }
+    .pm-label { font-size: 11px; text-transform: uppercase; letter-spacing: .04em; color: #66758a; }
+    .pm-value { font-size: 20px; font-weight: 650; color: #1d2c40; }
+    .pm-foot { font-size: 11px; color: #8a96a8; }
+    .profile-columns { display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 12px; }
+    .profile-block { border: 1px solid #e1e6ef; border-radius: 6px; padding: 10px; background: #fff; }
+    .profile-block h4 { margin: 0 0 8px; font-size: 13px; color: #243247; }
+    .profile-body { font-size: 12px; color: #3f526b; }
+    .profile-body table { width: 100%; border-collapse: collapse; font-size: 12px; }
+    .profile-body th, .profile-body td { text-align: left; padding: 4px 6px; border-bottom: 1px solid #eef1f6; }
+    .profile-kv { display: grid; grid-template-columns: minmax(110px, auto) 1fr; gap: 2px 10px; margin: 0; }
+    .profile-kv dt { color: #66758a; }
+    .profile-kv dd { margin: 0; word-break: break-word; }
+    .profile-body ul { margin: 0; padding-left: 16px; }
+</style>
+  <link rel="icon" href="data:,">
+<style>
+  /* ==========================================================================
+     DESIGN SYSTEM  (loaded last so it refines everything above)
+     ========================================================================== */
+  :root {
+    --ink:        #101a2b;
+    --ink-soft:   #37475f;
+    --muted:      #6b7a90;
+    --muted-2:    #93a0b4;
+    --canvas:     #f4f6fb;
+    --surface:    #ffffff;
+    --border:     #e4e9f1;
+    --border-2:   #d3dbe7;
+    --teal:       #0e8a99;
+    --teal-600:   #0b7683;
+    --teal-700:   #09626d;
+    --teal-tint:  #e7f4f6;
+    --blue:       #3d7fc4;
+    --ok:         #128a4f;
+    --warn:       #b3760a;
+    --danger:     #c0392f;
+    --r-sm: 8px;
+    --r-md: 11px;
+    --r-lg: 14px;
+    --sh-1: 0 1px 2px rgba(16, 24, 40, .05);
+    --sh-2: 0 4px 14px rgba(16, 24, 40, .07);
+    --sh-3: 0 10px 28px rgba(16, 24, 40, .10);
+  }
+
+  body {
+    font-family: "Inter", "Segoe UI Variable Text", "Segoe UI", system-ui, -apple-system, Arial, sans-serif;
+    color: var(--ink-soft);
+    background: var(--canvas);
+    -webkit-font-smoothing: antialiased;
+    font-size: 14px;
+  }
+  h1 { color: var(--ink); font-size: 26px; font-weight: 750; letter-spacing: -.015em; }
+  h2 { color: var(--ink); font-size: 19px; font-weight: 700; letter-spacing: -.01em; }
+  h3 { color: var(--ink); font-size: 15.5px; font-weight: 700; }
+  h4 { letter-spacing: -.005em; }
+  .eyebrow { color: var(--teal); font-size: 10.5px; font-weight: 800; letter-spacing: .13em; }
+  a { color: var(--teal-600); }
+  a:hover { color: var(--teal-700); }
+
+  /* thin scrollbars */
+  * { scrollbar-width: thin; scrollbar-color: #c8d2e0 transparent; }
+  *::-webkit-scrollbar { width: 9px; height: 9px; }
+  *::-webkit-scrollbar-thumb { background: #ccd5e2; border-radius: 999px; border: 2px solid transparent; background-clip: content-box; }
+  *::-webkit-scrollbar-thumb:hover { background: #adbace; background-clip: content-box; }
+
+  /* ==========================================================================
+     SIDEBAR
+     ========================================================================== */
+  .app-shell { grid-template-columns: 262px minmax(0, 1fr); }
+  .sidebar {
+    padding: 22px 14px 16px;
+    background: linear-gradient(180deg, #ffffff 0%, #fbfcfe 100%);
+    border-right: 1px solid var(--border);
+    overflow-y: auto;
+  }
+  .brand {
+    display: flex; align-items: center; gap: 11px;
+    margin: 0 6px 26px; padding-bottom: 20px;
+    border-bottom: 1px solid var(--border);
+    color: var(--ink); font-size: 18px; font-weight: 800; letter-spacing: -.02em;
+  }
+  .brand-mark {
+    width: 40px; height: 40px; flex: 0 0 auto;
+    display: grid; place-items: center; border-radius: 12px;
+    background: linear-gradient(140deg, var(--teal) 0%, #12a3b5 55%, var(--blue) 100%);
+    color: #fff; font-size: 20px; box-shadow: 0 4px 12px rgba(14, 138, 153, .30);
+  }
+  .sidebar-label { margin: 0 10px 10px; color: var(--muted-2); font-size: 10.5px; font-weight: 800; letter-spacing: .14em; }
+  .side-nav { display: grid; gap: 3px; }
+  .side-nav .nav-link {
+    position: relative;
+    display: flex; align-items: center; gap: 11px;
+    width: 100%; box-sizing: border-box;
+    padding: 10px 12px; border: 0; border-radius: var(--r-sm);
+    background: none; box-shadow: none;
+    text-align: left; text-decoration: none;
+    color: #55647a; font-size: 14px; font-weight: 600; font-family: inherit; cursor: pointer;
+    transition: background .14s ease, color .14s ease;
+  }
+  .side-nav .nav-link:hover { background: #f2f5fa; color: var(--ink); text-decoration: none; }
+  .side-nav .nav-link.active {
+    background: var(--teal-tint); color: var(--teal-700); font-weight: 700;
+  }
+  .side-nav .nav-link.active::before {
+    content: ""; position: absolute; left: 0; top: 8px; bottom: 8px;
+    width: 3px; border-radius: 0 3px 3px 0; background: var(--teal);
+  }
+  .side-nav .nav-icon {
+    width: 22px; height: 22px; flex: 0 0 auto;
+    display: grid; place-items: center; border-radius: 6px;
+    background: #eef2f8; color: #64748b; font-size: 13px;
+  }
+  .side-nav .nav-link.active .nav-icon { background: #d3eaee; color: var(--teal-700); }
+  .nav-sub { margin: 1px 0 5px 20px; padding-left: 10px; border-left: 1.5px solid var(--border-2); display: grid; gap: 1px; }
+  .nav-sub .nav-link { padding: 8px 10px; font-size: 13px; font-weight: 600; }
+  .local-note {
+    padding: 12px 13px; border: 1px solid var(--border); border-radius: var(--r-md);
+    background: #f7f9fc; color: var(--muted); font-size: 11.5px; line-height: 1.55;
+  }
+
+  /* ==========================================================================
+     TOPBAR
+     ========================================================================== */
+  .topbar {
+    position: sticky; top: 0; z-index: 20;
+    min-height: 60px; padding: 0 24px;
+    background: rgba(255, 255, 255, .92);
+    backdrop-filter: saturate(160%) blur(8px);
+    border-bottom: 1px solid var(--border);
+    box-shadow: var(--sh-1);
+  }
+  .top-nav { gap: 30px; height: 60px; }
+  .top-nav a {
+    height: 100%; display: flex; align-items: center;
+    border-bottom: 2px solid transparent;
+    color: var(--muted); font-size: 14px; font-weight: 600;
+  }
+  .top-nav a:hover { color: var(--ink); text-decoration: none; }
+  .top-nav a.active { border-color: var(--teal); color: var(--teal-700); font-weight: 700; }
+  .top-actions { gap: 8px; display: flex; align-items: center; justify-content: space-between; }
+  .top-actions .conn-group { display: flex; gap: 8px; align-items: center; }
+  .conn-btn {
+    display: inline-flex; align-items: center; gap: 7px;
+    border: 1px solid var(--teal-700); border-radius: var(--r-sm);
+    padding: 7px 13px; color: #fff; background: var(--teal);
+    font-family: inherit; font-size: 13px; font-weight: 650; line-height: 1.25;
+    cursor: pointer; box-shadow: var(--sh-1); white-space: nowrap;
+    transition: background .15s ease, border-color .15s ease, box-shadow .15s ease, transform .06s ease;
+  }
+  .conn-btn:hover:not(:disabled) { background: var(--teal-600); border-color: var(--teal-700); box-shadow: 0 3px 10px rgba(14, 138, 153, .22); }
+  .conn-btn:active:not(:disabled) { transform: translateY(1px); }
+  .conn-btn:focus-visible { outline: 2px solid var(--teal); outline-offset: 2px; }
+  .conn-btn:disabled { opacity: .5; cursor: not-allowed; box-shadow: none; }
+  .conn-btn .conn-btn-dot {
+    width: 7px; height: 7px; border-radius: 50%; flex: 0 0 auto; position: relative;
+  }
+  .conn-btn .conn-btn-dot::after {
+    content: ''; position: absolute; inset: -4px; border-radius: 50%;
+    opacity: 0;
+  }
+  .conn-btn .conn-btn-dot.dot-ok { background: var(--ok); }
+  .conn-btn .conn-btn-dot.dot-ok::after { background: rgba(18, 138, 79, .2); opacity: 1; }
+  .conn-btn .conn-btn-dot.dot-warn { background: var(--warn); }
+  .conn-btn .conn-btn-dot.dot-warn::after { background: rgba(179, 118, 10, .2); opacity: 1; }
+  .conn-btn .conn-btn-dot.dot-missing { background: var(--muted-2); }
+  .conn-btn .conn-btn-label { font-size: 12.5px; }
+  .conn-btn.btn-refresh {
+    background: #fff; color: var(--ink-soft); border-color: var(--border-2);
+  }
+  .conn-btn.btn-refresh:hover:not(:disabled) { background: #f5f8fc; border-color: #bccadb; color: var(--ink); }
+  .top-actions .local-label { color: var(--muted); font-size: 12px; }
+
+  /* ==========================================================================
+     BUTTONS
+     ========================================================================== */
+  button {
+    border: 1px solid var(--teal-700); border-radius: var(--r-sm);
+    padding: 9px 15px; color: #fff; background: var(--teal);
+    font-family: inherit; font-size: 13.5px; font-weight: 650; line-height: 1.25;
+    cursor: pointer; box-shadow: var(--sh-1);
+    transition: background .15s ease, border-color .15s ease, box-shadow .15s ease, transform .06s ease;
+  }
+  button:hover:not(:disabled) { background: var(--teal-600); border-color: var(--teal-700); box-shadow: 0 3px 10px rgba(14, 138, 153, .22); }
+  button:active:not(:disabled) { transform: translateY(1px); }
+  button:focus-visible { outline: 2px solid var(--teal); outline-offset: 2px; }
+  button:disabled { opacity: .5; cursor: not-allowed; box-shadow: none; }
+  button.secondary, .btn-secondary, .mp-btn {
+    border: 1px solid var(--border-2); border-radius: var(--r-sm);
+    padding: 9px 15px; color: var(--ink-soft); background: #fff;
+    font-family: inherit; font-size: 13.5px; font-weight: 650; box-shadow: var(--sh-1);
+  }
+  button.secondary:hover:not(:disabled), .btn-secondary:hover, .mp-btn:hover:not(:disabled) {
+    background: #f5f8fc; border-color: #bccadb; color: var(--ink);
+  }
+  .mp-btn.primary {
+    background: var(--teal); border-color: var(--teal-700); color: #fff;
+  }
+  .mp-btn.primary:hover { background: var(--teal-600); }
+  button.btn-sm, .btn-sm { padding: 6px 11px; font-size: 12.5px; border-radius: 7px; }
+  button.btn-danger { background: #fff; color: var(--danger); border-color: #f0cccc; box-shadow: var(--sh-1); }
+  button.btn-danger:hover:not(:disabled) { background: #fdf2f1; border-color: #e5b3ae; }
+  .pager button { padding: 6px 11px; font-size: 14px; font-weight: 700; color: var(--ink-soft); background: #fff; border-color: var(--border-2); box-shadow: none; }
+  .pager button:hover:not(:disabled) { background: #f2f6fb; box-shadow: none; }
+
+  /* ==========================================================================
+     PILLS / BADGES
+     ========================================================================== */
+  .pill {
+    display: inline-flex; align-items: center; gap: 5px;
+    padding: 3px 10px; border-radius: 999px;
+    font-size: 11px; font-weight: 750; letter-spacing: .02em; white-space: nowrap;
+  }
+  .pill.ok      { color: #0a6b3d; background: #e2f6ea; }
+  .pill.mid     { color: #8a5a00; background: #fdf0d5; }
+  .pill.low     { color: #a12f2f; background: #fdeaea; }
+  .pill.info    { color: #0b5c74; background: #e5f2f8; }
+  .pill.neutral { color: #5a6a7f; background: #eef1f6; }
+  .price-tag {
+    display: inline-flex; align-items: baseline; gap: 4px;
+    padding: 4px 10px; border-radius: 7px;
+    background: #eefaf3; color: #0a6b3d; font-size: 12.5px; font-weight: 800;
+  }
+  .price-tag .cur { font-size: 10.5px; font-weight: 700; opacity: .8; }
+
+  /* ==========================================================================
+     KPI / METRIC CARDS
+     ========================================================================== */
+  .metric-grid { gap: 16px; margin-bottom: 20px; }
+  .metric-card {
+    position: relative; min-height: 128px; padding: 18px 19px;
+    border: 1px solid var(--border); border-top: 0; border-radius: var(--r-lg);
+    background: var(--surface); box-shadow: var(--sh-1);
+    transition: box-shadow .18s ease, transform .12s ease, border-color .18s ease;
+  }
+  .metric-card:hover { border-color: #cbd7e6; box-shadow: var(--sh-3); transform: translateY(-2px); }
+  .metric-card:nth-child(2), .metric-card:nth-child(3), .metric-card:nth-child(4) { border-top-color: var(--border); }
+  .metric-card::before {
+    content: ""; position: absolute; right: 16px; top: 16px;
+    width: 40px; height: 40px; display: grid; place-items: center;
+    border-radius: 11px; font-size: 17px;
+  }
+  .metric-card:nth-child(1)::before { content: "\25A6"; background: var(--teal-tint); color: var(--teal-700); }
+  .metric-card:nth-child(2)::before { content: "\25C9"; background: #e7f0fa; color: #2f6ea8; }
+  .metric-card:nth-child(3)::before { content: "\2261"; background: #e9f7ef; color: var(--ok); }
+  .metric-card:nth-child(4)::before { content: "\25CE"; background: #fdf3df; color: var(--warn); }
+  .metric-label { display: block; padding-right: 52px; color: var(--muted); font-size: 11.5px; font-weight: 750; letter-spacing: .06em; text-transform: uppercase; }
+  .metric-label span:last-child { display: none; }
+  .metric-value { margin: 14px 0 4px; color: var(--ink); font-size: 32px; font-weight: 780; line-height: 1; letter-spacing: -.02em; }
+  .metric-foot { color: var(--muted-2); font-size: 12px; }
+
+  /* ==========================================================================
+     PANELS / CARDS
+     ========================================================================== */
+  .panel { border: 1px solid var(--border); border-radius: var(--r-lg); background: var(--surface); box-shadow: var(--sh-1); }
+  .panel-head h3, .panel-head h2 { margin-bottom: 2px; }
+  .results-panel { border-radius: var(--r-lg); }
+  .results-heading { padding: 20px 22px 14px; align-items: center; }
+  .results-heading h2 { font-size: 20px; }
+  #scan-summary { margin-top: 6px; color: var(--muted); font-size: 12.5px; }
+  .toolbar { min-height: 58px; padding: 11px 16px; background: #fafcff; border-top: 1px solid var(--border); border-bottom: 1px solid var(--border); }
+  .toolbar input, .toolbar select,
+  .scan-layout input, .scan-layout select,
+  .research-box input, .research-box select, .research-box textarea,
+  .mp-row input, .mp-row select, .conn-row input, .meta-country-row select {
+    border: 1px solid var(--border-2); border-radius: var(--r-sm);
+    padding: 9px 11px; color: var(--ink); background: #fff;
+    transition: border-color .15s ease, box-shadow .15s ease;
+  }
+  .toolbar input:focus, .toolbar select:focus, .scan-layout input:focus, .scan-layout select:focus,
+  .research-box input:focus, .research-box select:focus, .research-box textarea:focus,
+  .mp-row input:focus, .conn-row input:focus {
+    outline: 0; border-color: var(--teal); box-shadow: 0 0 0 3px rgba(14, 138, 153, .14);
+  }
+  .result-count { color: var(--ink-soft); font-size: 12.5px; font-weight: 700; }
+  .page-status { font-size: 12.5px; }
+  .breadcrumb { margin: 0 0 14px; color: var(--muted-2); font-size: 12.5px; font-weight: 600; }
+
+  /* ==========================================================================
+     DATA TABLES  (the product catalogue)
+     ========================================================================== */
+  .table-wrap {
+    width: 100%; overflow: auto; border-radius: 0 0 var(--r-lg) var(--r-lg);
+    background: #fff;
+  }
+  table { min-width: 1780px; border-collapse: separate; border-spacing: 0; font-size: 13px; }
+  th, td { max-width: 340px; text-align: left; vertical-align: top; }
+  thead th {
+    position: sticky; top: 0; z-index: 3;
+    padding: 12px 14px;
+    color: #55647a; background: #f7f9fc;
+    border-bottom: 1px solid var(--border-2);
+    box-shadow: inset 0 -1px 0 var(--border-2);
+    font-size: 10.5px; font-weight: 800; letter-spacing: .08em; text-transform: uppercase;
+    white-space: nowrap;
+  }
+  tbody td { padding: 10px 12px; border-bottom: 1px solid #eef2f7; vertical-align: top; }
+  tbody tr:last-child td { border-bottom: 0; }
+  tbody tr { transition: background .12s ease; }
+  tbody tr:hover { background: #f8fbfe; }
+  tbody tr:nth-child(even) { background: #fcfdff; }
+  tbody tr:nth-child(even):hover { background: #f8fbfe; }
+
+  /* catalogue product cell */
+  .product-cell { display: flex; gap: 11px; align-items: flex-start; min-width: 280px; }
+  .product-thumb {
+    width: 64px; height: 64px; flex: 0 0 auto; object-fit: cover;
+    border: 1px solid var(--border); border-radius: 8px; background: #fff;
+    box-shadow: var(--sh-1);
+  }
+  .product-thumb.placeholder {
+    display: grid; place-items: center; color: var(--muted-2);
+    background: #f4f7fb; font-size: 16px;
+  }
+  .product-main { display: grid; gap: 6px; min-width: 0; }
+  .product-name { color: var(--ink); font-size: 14.5px; font-weight: 750; line-height: 1.3; letter-spacing: -.005em; }
+  .product-desc {
+    margin: 0; color: var(--muted); font-size: 12px; line-height: 1.45;
+    display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;
+    position: relative;
+    cursor: help;
+  }
+  .product-desc:hover::after {
+    content: attr(data-full);
+    position: absolute; bottom: calc(100% + 6px); left: 0; z-index: 50;
+    min-width: 200px; max-width: 340px; max-height: 200px; overflow: auto;
+    padding: 10px 12px; border-radius: 8px;
+    background: #fff; border: 1px solid var(--border); box-shadow: var(--sh-3);
+    font-size: 12px; line-height: 1.5; color: var(--ink-soft);
+    white-space: pre-wrap; word-break: break-word;
+    animation: tooltip-in .12s ease;
+  }
+  @keyframes tooltip-in { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: none; } }
+  .chip-row { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+  .row-index {
+    display: inline-grid; place-items: center; min-width: 26px; height: 26px; padding: 0 7px;
+    border-radius: 7px; background: #f1f5fa; color: #64748b; font-size: 12px; font-weight: 800;
+  }
+  .btn-profile {
+    margin-top: 3px; justify-self: start;
+    display: inline-flex; align-items: center; gap: 6px;
+    padding: 7px 13px; border-radius: 8px;
+    border: 1px solid var(--teal-700); background: var(--teal); color: #fff;
+    font-size: 12.5px; font-weight: 700; box-shadow: 0 1px 2px rgba(14, 138, 153, .25);
+  }
+  .btn-profile::after { content: "\2192"; font-size: 13px; }
+  .btn-profile:hover { background: var(--teal-600); }
+
+  /* catalogue price / list cells */
+  .price-list { display: grid; gap: 7px; min-width: 190px; max-width: 260px; max-height: 150px; overflow: auto; padding-right: 2px; }
+  .price-row { display: grid; gap: 1px; }
+  .price-supplier { color: var(--muted); font-size: 11.5px; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .price-value { color: var(--ink); font-size: 13.5px; font-weight: 750; }
+  .price-value.none { color: var(--muted-2); font-weight: 600; font-size: 12px; }
+  .price-value .unit { color: var(--muted); font-size: 11.5px; font-weight: 600; }
+  .competitor-list { display: grid; gap: 8px; min-width: 180px; max-width: 250px; }
+  .competitor-item { display: grid; gap: 3px; padding: 0; border: 0; }
+  .competitor-item .title { color: var(--ink-soft); font-size: 12.5px; font-weight: 650; }
+  .empty-cell { color: var(--muted-2); font-size: 12px; }
+
+  /* meta ads + identification cells */
+  .meta-cell, .ident-cell { display: grid; gap: 6px; justify-items: start; min-width: 165px; max-width: 220px; }
+  .meta-pages { color: var(--muted); font-size: 11.5px; line-height: 1.45; }
+  .ident-line { color: var(--ink-soft); font-size: 12px; font-weight: 650; }
+
+  /* engagement + score */
+  .engage-views { color: var(--ink); font-size: 18px; font-weight: 780; line-height: 1.1; letter-spacing: -.01em; }
+  .engage-label { color: var(--muted-2); font-size: 10.5px; font-weight: 700; letter-spacing: .05em; text-transform: uppercase; }
+  .stat-chips { display: flex; flex-wrap: wrap; gap: 5px; margin-top: 7px; }
+  .stat-chip {
+    display: inline-flex; align-items: center; gap: 4px;
+    padding: 3px 8px; border-radius: 999px;
+    background: #f1f5fa; color: #55647a; font-size: 11px; font-weight: 650;
+  }
+  .score { display: inline-block; padding: 6px 12px; border-radius: 999px; font-size: 14px; font-weight: 800; letter-spacing: -.01em; white-space: nowrap; }
+  .score.good { color: #0a6b3d; background: #e2f6ea; }
+  .score.mid  { color: #8a5a00; background: #fdf0d5; }
+  .score.low  { color: #a12f2f; background: #fdeaea; }
+  details > summary { cursor: pointer; color: var(--teal-600); font-size: 11.5px; font-weight: 650; }
+  details > summary:hover { color: var(--teal-700); }
+  details p { margin: 6px 0 0; color: var(--muted); font-size: 11.5px; line-height: 1.5; }
+  .details-meta { color: var(--ink-soft); font-size: 12px; font-weight: 650; }
+  .offer-list { display: grid; gap: 8px; }
+  .offer-item { padding: 8px 0 0; border-top: 1px dashed var(--border); }
+  .offer-item:first-child { border-top: 0; padding-top: 0; }
+  .offer-item p { margin: 0 0 4px; font-size: 12px; }
+  .offer-item img { max-width: 84px; max-height: 72px; border-radius: 8px; border: 1px solid var(--border); object-fit: cover; }
+
+  /* market research cell */
+  .research-box { min-width: 250px; max-width: 340px; display: grid; gap: 9px; padding: 0; }
+  .research-links { display: flex; flex-wrap: wrap; gap: 6px 12px; font-size: 12px; }
+  .research-item { min-width: 120px; }
+  .research-item strong { display: block; color: var(--ink-soft); font-size: 12.5px; }
+
+  .warning {
+    margin: 0; padding: 12px 18px;
+    border-top: 1px solid #f0e2be; background: #fffaef;
+    color: #77591c; font-size: 12px; line-height: 1.55;
+  }
+  .empty { padding: 26px 20px; color: var(--muted); text-align: center; }
+
+  /* ==========================================================================
+     PRODUCT PROFILE
+     ========================================================================== */
+  .profile-head { padding-bottom: 4px; }
+  .profile-head h2 { font-size: 24px; }
+  .profile-metrics { gap: 12px; margin: 16px 0; }
+  .profile-metric {
+    position: relative; overflow: hidden;
+    border: 1px solid var(--border); border-radius: var(--r-md);
+    background: linear-gradient(160deg, #fbfdff 0%, #f4f8fc 100%);
+    padding: 13px 14px; display: grid; gap: 4px;
+  }
+  .profile-metric::after {
+    content: ""; position: absolute; left: 0; top: 0; bottom: 0; width: 3px;
+    background: var(--teal); opacity: .55;
+  }
+  .pm-label { color: var(--muted); font-size: 10.5px; font-weight: 800; letter-spacing: .07em; text-transform: uppercase; }
+  .pm-value { color: var(--ink); font-size: 22px; font-weight: 780; line-height: 1.1; letter-spacing: -.02em; }
+  .pm-foot { color: var(--muted-2); font-size: 11px; }
+  .profile-columns { gap: 14px; }
+  .profile-block {
+    border: 1px solid var(--border); border-radius: var(--r-md);
+    background: var(--surface); padding: 14px 15px; box-shadow: var(--sh-1);
+  }
+  .profile-block h4 {
+    margin: 0 0 10px; padding-bottom: 8px;
+    border-bottom: 1px solid var(--border);
+    color: var(--ink); font-size: 11.5px; font-weight: 800; letter-spacing: .07em; text-transform: uppercase;
+  }
+  .profile-body { font-size: 12.5px; color: var(--ink-soft); }
+  .profile-body table { min-width: 0; border-collapse: collapse; width: 100%; }
+  .profile-body thead th {
+    position: static; padding: 6px 8px; background: #f6f9fc;
+    color: var(--muted); font-size: 10px; box-shadow: none; border-bottom: 1px solid var(--border);
+  }
+  .profile-body tbody td { padding: 6px 8px; border-bottom: 1px solid #f1f5fa; vertical-align: middle; }
+  .profile-body tbody tr:hover { background: #f8fbfe; }
+  .profile-kv dt { color: var(--muted); font-size: 11.5px; font-weight: 600; }
+  .profile-kv dd { color: var(--ink-soft); font-size: 12.5px; font-weight: 600; }
+
+  /* ==========================================================================
+     OUTPUT / LOG BOXES
+     ========================================================================== */
+  .mp-out {
+    border: 1px solid var(--border); border-radius: var(--r-md);
+    background: #f8fafd; color: var(--ink-soft);
+    padding: 12px 14px; font-size: 12px; line-height: 1.5;
+    max-height: 340px; overflow: auto;
+  }
+  .mp-out.error { color: #8c2b23; background: #fdf3f2; border-color: #f0cdc8; }
+  .mp-out pre { margin: 0; white-space: pre-wrap; word-break: break-word; font: inherit; }
+  #status { border: 1px solid var(--border); border-radius: var(--r-md); background: #f8fafd; color: var(--ink-soft); padding: 12px 14px; font-size: 13px; }
+  #status.error { color: #8c2b23; background: #fdf3f2; border-color: #f0cdc8; }
+  .meta-log { border-radius: var(--r-md); background: #f8fafd; border: 1px solid var(--border); }
+  .conn-panel { border: 1px solid var(--border); border-radius: var(--r-md); background: #fbfdff; padding: 18px 20px; }
+  .conn-panel h3 { margin: 0 0 6px; font-size: 16px; }
+  .conn-sub { margin: 0 0 14px; color: var(--muted); font-size: 13px; }
+  .conn-actions { display: flex; gap: 8px; margin-top: 6px; flex-wrap: wrap; }
+  .conn-actions button { padding: 8px 16px; }
+  .conn-actions button.primary { background: var(--teal); border-color: var(--teal-700); color: #fff; }
+  .conn-actions button.primary:hover:not(:disabled) { background: var(--teal-600); }
+  .conn-actions button:not(.primary) { border: 1px solid var(--border-2); color: var(--ink-soft); background: #fff; }
+  .conn-actions button:not(.primary):hover:not(:disabled) { background: #f5f8fc; border-color: #bccadb; color: var(--ink); }
+  .conn-note { font-size: 12px; color: var(--muted-2); margin-top: 12px; line-height: 1.5; }
+  .conn-status-out { margin-top: 10px; font-size: 13px; color: var(--ink-soft); min-height: 20px; }
+  .conn-status-out.error { color: #8c2b23; }
+  .mp-chatlist { border-radius: var(--r-md); border-color: var(--border); }
+  .chat-option { border-radius: var(--r-sm); border-color: var(--border); }
+  .chat-option:hover { background: #f7faff; }
+  .snapshot-item { border-radius: var(--r-md); border-color: var(--border); background: #fbfdff; }
+  .snapshot-item strong { color: var(--ink); font-weight: 750; }
+  #scan-summary, .muted { color: var(--muted); }
+  .selection-summary { color: var(--muted); }
+  #chats { max-height: 230px; }
+
+  /* ==========================================================================
+     MODAL DIALOGS
+     ========================================================================== */
+  body.modal-open { overflow: hidden; }
+  .modal-overlay {
+    position: fixed; inset: 0; z-index: 260;
+    display: grid; place-items: center; padding: 22px;
+    background: rgba(15, 23, 42, .45);
+    backdrop-filter: blur(3px);
+    animation: overlay-in .16s ease;
+  }
+  .modal-overlay.hidden { display: none !important; }
+  .modal {
+    width: min(640px, 100%); max-height: 88vh; overflow: auto;
+    background: #fff; border-radius: var(--r-lg);
+    box-shadow: 0 28px 70px rgba(16, 24, 40, .32);
+    animation: modal-in .22s cubic-bezier(.2, .8, .25, 1);
+  }
+  .modal-head {
+    position: sticky; top: 0; z-index: 2;
+    display: flex; align-items: center; justify-content: space-between; gap: 12px;
+    padding: 16px 20px; background: #fff;
+    border-bottom: 1px solid var(--border);
+    border-radius: var(--r-lg) var(--r-lg) 0 0;
+  }
+  .modal-head h3 { margin: 0; font-size: 16px; }
+  .modal-close {
+    width: 34px; height: 34px; padding: 0; flex: 0 0 auto;
+    display: grid; place-items: center;
+    border: 0; border-radius: 9px; background: #f1f5fa; color: var(--muted);
+    box-shadow: none; font-size: 19px; line-height: 1;
+  }
+  .modal-close:hover:not(:disabled) { background: #e6ecf4; color: var(--ink); box-shadow: none; }
+  .modal-body { padding: 18px 20px 22px; }
+  .modal-body .conn-panel { border: 0; background: transparent; padding: 0; margin-top: 0 !important; }
+  @keyframes overlay-in { from { opacity: 0; } to { opacity: 1; } }
+  @keyframes modal-in { from { opacity: 0; transform: translateY(12px) scale(.98); } to { opacity: 1; transform: none; } }
+
+  /* ==========================================================================
+     TOAST NOTIFICATIONS  (right-hand side, Odoo-style)
+     ========================================================================== */
+  .toast-stack {
+    position: fixed; top: 74px; right: 18px; z-index: 320;
+    width: min(370px, calc(100vw - 32px));
+    display: grid; gap: 10px;
+    pointer-events: none;
+  }
+  .toast {
+    pointer-events: auto;
+    display: flex; align-items: flex-start; gap: 11px;
+    padding: 13px 14px;
+    border: 1px solid var(--border); border-left: 4px solid var(--teal);
+    border-radius: var(--r-md); background: #fff;
+    box-shadow: var(--sh-3);
+    animation: toast-in .3s cubic-bezier(.2, .8, .25, 1);
+  }
+  .toast.ok    { border-left-color: var(--ok); }
+  .toast.warn  { border-left-color: var(--warn); }
+  .toast.error { border-left-color: var(--danger); }
+  .toast.hide { animation: toast-out .22s ease forwards; }
+  .toast-icon {
+    width: 24px; height: 24px; flex: 0 0 auto;
+    display: grid; place-items: center; border-radius: 50%;
+    background: var(--teal-tint); color: var(--teal-700);
+    font-size: 12px; font-weight: 800;
+  }
+  .toast.ok .toast-icon    { background: #e2f6ea; color: var(--ok); }
+  .toast.warn .toast-icon  { background: #fdf0d5; color: var(--warn); }
+  .toast.error .toast-icon { background: #fdeaea; color: var(--danger); }
+  .toast-content { flex: 1; min-width: 0; }
+  .toast-title { margin-bottom: 2px; color: var(--ink); font-size: 13px; font-weight: 750; }
+  .toast-msg {
+    color: var(--muted); font-size: 12.5px; line-height: 1.45;
+    white-space: pre-wrap; word-break: break-word; max-height: 150px; overflow: auto;
+  }
+  .toast-close {
+    width: 24px; height: 24px; padding: 0; flex: 0 0 auto;
+    display: grid; place-items: center;
+    border: 0; background: none; box-shadow: none;
+    color: var(--muted-2); font-size: 16px; line-height: 1;
+  }
+  .toast-close:hover:not(:disabled) { background: none; box-shadow: none; color: var(--ink); }
+  @keyframes toast-in { from { opacity: 0; transform: translateX(28px) scale(.98); } to { opacity: 1; transform: none; } }
+  @keyframes toast-out { to { opacity: 0; transform: translateX(28px) scale(.98); } }
+
+  .settings-card { padding: 18px 20px; }
+  .settings-card h3 { margin: 0 0 5px; }
+  .settings-card p { margin: 0 0 14px; color: var(--muted); font-size: 12.5px; }
+
+  @media (max-width: 1050px) {
+    .app-shell { grid-template-columns: 218px minmax(0, 1fr); }
+    .product-cell { min-width: 240px; }
+  }
+  @media (max-width: 700px) {
+    .metric-card { min-height: 104px; }
+    .metric-card::before { display: none; }
+    .metric-label { padding-right: 0; }
+    .product-thumb { width: 60px; height: 60px; }
+  }
+</style>
+</head>
+
+<body>
+
+  <div class="app-shell">
+
+    <aside class="sidebar">
+
+      <a class="brand" href="#overview">
+
+        <span class="brand-mark">↗</span>
+
+        <span>Product Scout</span>
+
+      </a>
+
+      <p class="sidebar-label">WORKSPACE</p>
+
+      <nav class="side-nav" aria-label="Main navigation">
+        <a class="nav-link active" href="#" data-page="overview"><span class="nav-icon">▦</span>Overview</a>
+        <button class="nav-link nav-group" type="button" data-group="research" aria-expanded="true"><span class="nav-icon">⌕</span>Research Tools</button>
+        <div class="nav-sub" id="nav-sub-research">
+          <a class="nav-link" href="#" data-page="products">Product Search</a>
+          <a class="nav-link" href="#" data-page="image">Image Search</a>
+        </div>
+        <a class="nav-link" href="#" data-page="reports"><span class="nav-icon">▤</span>Reports</a>
+        <a class="nav-link" href="#" data-page="settings"><span class="nav-icon">◎</span>Settings</a>
+</nav>
+
+      <div class="sidebar-spacer"></div>
+
+      <div class="local-note"><span class="status-dot"></span> Local workspace<br>Telegram data stays on this computer.</div>
+
+    </aside>
+
+
+
+    <div class="workspace">
+
+      <header class="topbar">
+
+        <div class="top-actions">
+  <div class="conn-group">
+    <button id="btn-refresh-telegram" type="button" class="conn-btn btn-refresh" title="Refresh Telegram chats">
+      ↻ Refresh
+    </button>
+    <button id="btn-connect-telegram" type="button" class="conn-btn" data-status="telegram">
+      <span class="conn-btn-dot" id="telegram-dot"></span>
+      <span class="conn-btn-label" id="telegram-label">Telegram not connected</span>
+    </button>
+    <button id="btn-test-meta" type="button" class="conn-btn" data-status="meta">
+      <span class="conn-btn-dot" id="meta-dot"></span>
+      <span class="conn-btn-label" id="meta-label">Meta Ad Library unavailable</span>
+    </button>
+  </div>
+</div>
+
+      </header>  <main id="overview">
+
+    <!-- ===================== PAGE: OVERVIEW ===================== -->
+    <div class="app-page" id="page-overview" data-page="overview">
+<section class="page-heading">
+
+          <div>
+
+            <p class="eyebrow">WHOLESALE PRODUCT INTELLIGENCE</p>
+
+            <h1>Product research dashboard</h1>
+
+            <p>Find supplier offers, compare prices, and prioritize products worth researching.</p>
+
+          </div>
+
+          <div class="heading-actions">
+
+            <button id="show-scan" type="button">＋ New scan</button>
+
+          </div>
+
+        </section>
+
+
+
+        <section class="metric-grid" aria-label="Scan overview">
+
+          <button class="metric-card" type="button" data-dashboard-metric="products" aria-label="Open products in the selected scan">
+            <div class="metric-label"><span>Product / offer records</span><span>▦</span></div>
+            <div id="metric-messages" class="metric-value">—</div>
+
+            <div id="metric-period" class="metric-foot">Click to inspect the selected Telegram scan</div>
+          </button>
+          <button class="metric-card" type="button" data-dashboard-metric="views" aria-label="Sort offers by Telegram views">
+            <div class="metric-label"><span>Telegram views captured</span><span>◉</span></div>
+            <div id="metric-offers" class="metric-value">—</div>
+
+            <div class="metric-foot">Click to compare offers with the most views</div>
+          </button>
+          <button class="metric-card" type="button" data-dashboard-metric="engagement" aria-label="Sort offers by Telegram engagement">
+            <div class="metric-label"><span>Telegram engagement</span><span>♡</span></div>
+            <div id="metric-suppliers" class="metric-value">—</div>
+
+            <div class="metric-foot">Click to compare reactions, replies, and forwards</div>
+          </button>
+          <button class="metric-card" type="button" data-dashboard-metric="ads" aria-label="Open product Meta ad research">
+            <div class="metric-label"><span>Active Meta ads found</span><span>f</span></div>
+            <div id="metric-researched" class="metric-value">—</div>
+
+            <div class="metric-foot">Click to inspect each ad lookup result, including errors</div>
+          </button>
+        </section>
+
+
+
+        <section class="overview-grid">
+
+          <article class="panel">
+
+            <div class="panel-head">
+
+              <div><h2>Highest test priorities</h2><p>Ranked from the current scan</p></div>
+
+              <a href="#products-section">View table ›</a>
+
+            </div>
+
+            <div id="priority-chart" class="muted">Scores appear here after scanning.</div>
+
+          </article>
+
+          <article class="panel" id="research-section">
+
+            <div class="panel-head">
+
+              <div><h2>Market intelligence</h2><p>Validate demand and competition before testing</p></div>
+
+            </div>
+
+            <div class="snapshot-grid">
+
+              <div class="snapshot-item"><strong>Google Trends</strong><span>Record whether search interest is rising, stable, or falling.</span></div>
+
+              <div class="snapshot-item"><strong>Meta Ad Library</strong><span>Count visible ads and note how long active ads have run.</span></div>
+
+              <div class="snapshot-item"><strong>Social signals</strong><span>Record observed views and interactions with a source link.</span></div>
+
+              <div class="snapshot-item"><strong>Competitor prices</strong><span>Fetch public listing metadata from a product-page URL.</span></div>
+
+            </div>
+
+          </article>
+
+        </section>
+
+
+
+    </div>
+
+    <!-- ===================== PAGE: RESEARCH TOOLS > PRODUCT SEARCH ===================== -->
+    <div class="app-page" id="page-products" data-page="products" hidden>
+      <nav class="breadcrumb" aria-label="Breadcrumb">Research Tools <span>/</span> Product Search</nav>
+
+      <div id="login-panel" hidden class="panel">
+
+        <h2>Sign in to Telegram</h2>
+
+        <p class="muted">Enter sign-in details only in this local dashboard. The code and password are not saved by the app.</p>
+
+        <div id="phone-step" class="row">
+
+          <label>Telegram phone number, including country code
+
+            <input id="phone" type="tel" autocomplete="tel" placeholder="+213 ...">
+
+          </label>
+
+          <button id="send-code">Send me a Telegram code</button>
+
+        </div>
+
+        <div id="code-step" class="row" hidden>
+
+          <label>Telegram sign-in code
+
+            <input id="login-code" type="password" inputmode="numeric" autocomplete="one-time-code">
+
+          </label>
+
+          <button id="verify-code">Verify code</button>
+
+        </div>
+
+        <div id="password-step" class="row" hidden>
+
+          <label>Telegram two-step verification password
+
+            <input id="login-password" type="password" autocomplete="current-password">
+
+          </label>
+
+          <button id="verify-password">Verify password</button>
+
+        </div>
+
+      </div>
+
+      <details class="panel scan-panel" id="scan-controls">
+
+        <summary>
+
+          <div><h2>Scan settings</h2><span class="muted">Select dates and Telegram channels before starting a scan</span></div>
+
+        </summary>
+
+        <div class="scan-panel-body">
+
+          <p class="panel-intro">Arabic posts that the English-oriented recognizer cannot name are shown as offers to review. No chats are selected automatically.</p>
+
+          <div class="scan-layout">
+
+            <div>
+
+              <div class="row">
+
+                <label>From <input id="start-date" type="date"></label>
+
+                <label>Through <input id="end-date" type="date"></label>
+
+              </div>
+
+              <label style="margin-top:10px">Market for research links
+
+                <select id="market">
+
+                  <option>Algeria</option>
+
+                  <option>United States</option>
+
+                  <option>United Kingdom</option>
+
+                  <option>European Union</option>
+
+                </select>
+
+              </label>
+
+              <div class="chat-tools">
+
+                <button id="select-all" class="secondary">Select all</button>
+
+                <button id="select-none" class="secondary">Select none</button>
+
+              </div>
+
+              <div id="selection-summary" class="selection-summary">No chats selected.</div>
+
+              <div class="chat-tools">
+
+                <button id="scan" type="button">Scan selected chats</button>
+
+                <button id="cancel-scan" class="secondary" type="button" hidden>Stop scan</button>
+
+              </div>
+
+              <div class="scan-progress" aria-label="Scan progress"><span id="progress-fill"></span></div>
+
+            </div>
+
+            <div>
+
+              <div class="panel-head">
+
+                <div><h3>Telegram channels &amp; groups</h3><p>Choose only the chats you want to scan</p></div>
+
+              </div>
+
+              <div id="chats" class="muted">Load your Telegram channels and groups to begin.</div>
+
+            </div>
+
+          </div>
+
+        </div>
+
+      </details>
+
+<section class="panel results-panel" id="products-section">
+
+          <div class="results-heading">
+
+            <div>
+
+              <p class="eyebrow">OPPORTUNITY PIPELINE</p>
+
+              <h2>Product opportunities</h2>
+
+              <div id="scan-summary" class="muted"></div>
+
+            </div>
+
+            <button class="secondary" type="button" id="show-scan-secondary">＋ New scan</button>
+
+          </div>
+
+          <div class="toolbar">
+
+            <div class="toolbar-left">
+
+              <label class="sr-only" for="product-search">Search product table</label>
+
+              <input id="product-search" type="search" placeholder="⌕  Search products, suppliers...">
+
+              <label class="sr-only" for="product-filter">Filter products</label>
+
+              <select id="product-filter">
+
+                <option value="all">All products</option>
+
+                <option value="identified">Identified</option>
+
+                <option value="review">Review offers</option>
+
+                <option value="researched">Researched</option>
+
+              </select>
+
+              <label class="sr-only" for="product-sort">Sort products</label>
+
+              <select id="product-sort">
+
+                <option value="priority">Priority</option>
+
+                <option value="suppliers">Supplier count</option>
+
+                <option value="newest">Newest post</option>
+
+                <option value="price">Lowest listed price</option>
+
+                <option value="title">Product title</option>
+
+              </select>
+
+            </div>
+
+            <div class="toolbar-right">
+
+              <span id="result-count" class="result-count">0 products</span>
+
+              <div class="pager">
+
+                <button id="page-prev" type="button" aria-label="Previous page">‹</button>
+
+                <span id="page-status" class="page-status">0–0 of 0</span>
+
+                <button id="page-next" type="button" aria-label="Next page">›</button>
+
+              </div>
+
+            </div>
+
+          </div>
+
+          <div id="results" class="empty">Run a scan to see product opportunities here.</div>
+
+          <p class="warning">Google Trends and Meta Ad Library open as public research pages; record only what you actually observe. A test-priority score is a research aid, not proof of sales or profit. Retailers may block price lookup, and wholesale/retail prices are comparable only when currency, unit, shipping, and taxes match.</p>
+
+        </section>
+    
+<article class="panel mp-page" id="meta-summary-page">
+  <p class="eyebrow">META AD LIBRARY</p>
+  <h3>Meta ad activity</h3>
+  <p class="mp-sub">How many active Meta ads were found for your products, and whether a lookup is running.</p>
+  <div class="mp-row">
+    <button id="mp-meta-reload" class="mp-btn primary" type="button">Load summary</button>
+    <button id="mp-meta-resume" class="mp-btn" type="button">Resume Meta lookup</button>
+  </div>
+  <div id="mp-meta-out" class="mp-out">Load the summary to see Meta ad activity.</div>
+</article>
+
+<article class="panel mp-page" id="identification-summary-page">
+  <p class="eyebrow">IDENTIFICATION STATUS</p>
+  <h3>Photo &amp; web identification</h3>
+  <p class="mp-sub">Progress of automatic photo identification and web research across your products.</p>
+  <div class="mp-row">
+    <button id="mp-ident-summary-reload" class="mp-btn primary" type="button">Load summary</button>
+  </div>
+  <div id="mp-ident-summary-out" class="mp-out">Load the summary to see identification progress.</div>
+</article>
+</div>
+
+    <!-- ===================== PAGE: PRODUCT PROFILE (inner page) ===================== -->
+    <div class="app-page" id="page-product" data-page="product" hidden>
+      <nav class="breadcrumb" aria-label="Breadcrumb">Research Tools <span>/</span> Product Search <span>/</span> Product Profile</nav>
+      <article class="panel" id="product-profile-page">
+        <div class="profile-head">
+          <div>
+            <p class="eyebrow">PRODUCT PROFILE</p>
+            <h2 id="profile-name">No product selected</h2>
+            <p class="mp-sub" id="profile-key"></p>
+          </div>
+          <div class="chat-tools">
+            <button id="profile-back" type="button" class="mp-btn">&larr; Back to Product Search</button>
+            <button id="profile-refresh" type="button" class="mp-btn primary">Refresh profile</button>
+          </div>
+        </div>
+
+        <div class="profile-metrics">
+          <div class="profile-metric"><span class="pm-label">Test priority</span><span class="pm-value" id="pm-score">&ndash;</span><span class="pm-foot" id="pm-score-foot"></span></div>
+          <div class="profile-metric"><span class="pm-label">Telegram posts</span><span class="pm-value" id="pm-posts">&ndash;</span><span class="pm-foot" id="pm-posts-foot"></span></div>
+          <div class="profile-metric"><span class="pm-label">Suppliers</span><span class="pm-value" id="pm-sellers">&ndash;</span><span class="pm-foot" id="pm-sellers-foot"></span></div>
+          <div class="profile-metric"><span class="pm-label">Max views</span><span class="pm-value" id="pm-views">&ndash;</span><span class="pm-foot" id="pm-views-foot"></span></div>
+          <div class="profile-metric"><span class="pm-label">Lowest listed price</span><span class="pm-value" id="pm-price">&ndash;</span><span class="pm-foot" id="pm-price-foot"></span></div>
+          <div class="profile-metric"><span class="pm-label">Active Meta ads</span><span class="pm-value" id="pm-ads">&ndash;</span><span class="pm-foot" id="pm-ads-foot"></span></div>
+        </div>
+
+        <div class="profile-columns">
+          <section class="profile-block">
+            <h4>Specifications</h4>
+            <div id="profile-specs" class="profile-body">No specifications recorded yet.</div>
+          </section>
+
+          <section class="profile-block">
+            <h4>Identification</h4>
+            <div id="profile-ident" class="profile-body">Not identified yet.</div>
+            <div class="mp-row" style="margin-top:8px;">
+              <input id="profile-name-input" type="text" placeholder="Product name">
+              <button id="profile-save-name" type="button" class="mp-btn">Save name</button>
+              <button id="profile-ident-image" type="button" class="mp-btn">Identify from image</button>
+              <button id="profile-research-web" type="button" class="mp-btn">Research on the web</button>
+            </div>
+          </section>
+
+          <section class="profile-block">
+            <h4>Meta Ad Library</h4>
+            <div id="profile-meta" class="profile-body">No Meta ad lookup recorded for this product.</div>
+          </section>
+
+          <section class="profile-block">
+            <h4>Market research</h4>
+            <div id="profile-research" class="profile-body">No market research recorded yet.</div>
+            <div class="mp-row" style="margin-top:8px;">
+              <button id="profile-research-edit" type="button" class="mp-btn">Edit research notes</button>
+              <button id="profile-research-save" type="button" class="mp-btn primary" hidden>Save research</button>
+            </div>
+          </section>
+
+          <section class="profile-block">
+            <h4>Price &amp; engagement history</h4>
+            <div id="profile-history" class="profile-body">No history recorded yet.</div>
+          </section>
+
+          <section class="profile-block">
+            <h4>Similar sellers</h4>
+            <div id="profile-sellers" class="profile-body">Not checked yet.</div>
+            <div class="mp-row" style="margin-top:8px;">
+              <button id="profile-load-sellers" type="button" class="mp-btn">Check similar sellers</button>
+            </div>
+          </section>
+
+          <section class="profile-block">
+            <h4>Images &amp; offers</h4>
+            <div id="profile-images" class="profile-body">Not loaded yet.</div>
+            <div class="mp-row" style="margin-top:8px;">
+              <button id="profile-load-images" type="button" class="mp-btn">Load image posts &amp; offers</button>
+            </div>
+          </section>
+
+          <section class="profile-block">
+            <h4>Competitor listings from ads</h4>
+            <div id="profile-competitors" class="profile-body">Not fetched yet.</div>
+            <div class="mp-row" style="margin-top:8px;">
+              <button id="profile-load-competitors" type="button" class="mp-btn">Fetch competitor listings</button>
+            </div>
+          </section>
+
+          <section class="profile-block">
+            <h4>Alerts</h4>
+            <div id="profile-alerts" class="profile-body">No alerts for this product.</div>
+          </section>
+        </div>
+
+        <div id="profile-status" class="mp-out" style="margin-top:10px;">Open a product from the Product Search table to load its profile.</div>
+      </article>
+    </div>
+
+    <!-- ===================== PAGE: RESEARCH TOOLS > IMAGE SEARCH ===================== -->
+    <div class="app-page" id="page-image" data-page="image" hidden>
+      <nav class="breadcrumb" aria-label="Breadcrumb">Research Tools <span>/</span> Image Search</nav>
+<article class="panel mp-page" id="image-search-page">
+  <p class="eyebrow">REVERSE IMAGE SEARCH</p>
+  <h3>Image search</h3>
+  <p class="mp-sub">Upload a product photo, pick the channels to search, and find the same image in Telegram.</p>
+  <div class="mp-row">
+    <label>Image file
+      <input id="mp-image-file" type="file" accept="image/*">
+    </label>
+    <button id="mp-image-refresh-chats" class="mp-btn" type="button">Refresh channels</button>
+  </div>
+  <div id="mp-chat-list" class="mp-chatlist">Telegram channels are not loaded yet.</div>
+  <div class="mp-row">
+    <button id="mp-image-search" class="mp-btn primary" type="button">Search image</button>
+    <button id="mp-image-resume" class="mp-btn" type="button">Resume indexing</button>
+    <button id="mp-image-status" class="mp-btn" type="button">Check status</button>
+  </div>
+  <p class="mp-note">Searching can take a while; progress is reported below. A running Telegram operation can be cancelled from the Operations panel.</p>
+  <div id="mp-image-out" class="mp-out">Choose an image and at least one channel, then start the search.</div>
+</article>
+    </div>
+
+    <!-- ===================== PAGE: REPORTS ===================== -->
+    <div class="app-page" id="page-reports" data-page="reports" hidden>
+      <section class="page-heading">
+        <div>
+          <p class="eyebrow">REPORTS</p>
+          <h1>Reports &amp; saved scans</h1>
+          <p>Every finished scan, the Meta and photo identification summaries, and the CSV export.</p>
+        </div>
+      </section>
+<!-- ============ missing page: saved scan history ============ -->
+<div class="overview-grid" style="margin-top:17px;">
+  <article class="panel" id="missing-scans-page">
+    <h3>Saved scan history</h3>
+    <p>Previous scans persist across refreshes. Select one to reload its results, rename it, rerun it, or delete it.</p>
+    <div id="missing-scans-list" class="scan-progress" style="margin-top:8px; max-height:240px; overflow:auto; border:1px solid #e1e6ef; border-radius:5px; padding:4px;">
+      <table style="width:100%; font-size:12px; border-collapse:collapse;">
+        <thead>
+          <tr style="color:#43536a;">
+            <th style="text-align:left; padding:6px 8px; border-bottom:1px solid #e9edf3; font-size:11px; text-transform:uppercase; letter-spacing:.04em;">Name</th>
+            <th style="text-align:left; padding:6px 8px; border-bottom:1px solid #e9edf3; font-size:11px; text-transform:uppercase; letter-spacing:.04em;">Dates</th>
+            <th style="text-align:left; padding:6px 8px; border-bottom:1px solid #e9edf3; font-size:11px; text-transform:uppercase; letter-spacing:.04em;">Chats</th>
+            <th style="text-align:left; padding:6px 8px; border-bottom:1px solid #e9edf3; font-size:11px; text-transform:uppercase; letter-spacing:.04em;">Products</th>
+            <th style="text-align:left; padding:6px 8px; border-bottom:1px solid #e9edf3; font-size:11px; text-transform:uppercase; letter-spacing:.04em;">Status</th>
+            <th style="text-align:left; padding:6px 8px; border-bottom:1px solid #e9edf3; font-size:11px; text-transform:uppercase; letter-spacing:.04em;">Actions</th>
+          </tr>
+        </thead>
+        <tbody id="missing-scans-tbody"></tbody>
+      </table>
+    </div>
+    <div id="missing-scans-empty" class="muted" style="margin-top:8px; font-size:12px;">No saved scans yet.</div>
+    <div class="chat-tools" style="margin-top:10px;">
+      <button id="missing-scans-refresh" type="button" class="secondary">Refresh saved scans</button>
+    </div>
+    <div id="missing-scans-status" style="margin-top:8px; font-size:12px; color:#456076;"></div>
+  </article>
+</div>
+<!-- ============ end missing page: saved scan history ============ -->
+
+
+<article class="panel mp-page" id="export-page">
+  <p class="eyebrow">OPERATIONS</p>
+  <h3>Export &amp; running jobs</h3>
+  <p class="mp-sub">Download the full research table, or cancel whatever Telegram / Meta job is running.</p>
+  <div class="mp-row">
+    <button id="mp-export-csv" class="mp-btn primary" type="button">Download CSV</button>
+    <button id="mp-cancel-op" class="mp-btn" type="button">Cancel running operation</button>
+  </div>
+  <div id="mp-export-out" class="mp-out">Exports downloads telegram-product-research.csv.</div>
+</article>
+    </div>
+
+    <!-- ===================== PAGE: SETTINGS ===================== -->
+    <div class="app-page" id="page-settings" data-page="settings" hidden>
+      <section class="page-heading">
+        <div>
+          <p class="eyebrow">SETTINGS</p>
+          <h1>Connection settings</h1>
+          <p>Telegram credentials and the Meta Ad Library country. These are the same controls as the header buttons.</p>
+        </div>
+      </section>
+
+
+<!-- Meta Ad Library panel -->
+
+          <section class="panel settings-card">
+        <h3>Connection settings</h3>
+        <p>Open the connection dialog to enter your Telegram API credentials or test the Meta Ad Library.</p>
+        <div class="conn-actions">
+          <button type="button" id="settings-connect-telegram">Connect Telegram</button>
+          <button type="button" id="settings-test-meta" class="secondary">Test Meta Ad Library</button>
+        </div>
+      </section>
+</div>
+
+  </main>
+
+    </div>
+
+  </div>
+
+<!-- ============ connection dialog (modal) ============ -->
+<div class="modal-overlay hidden" id="conn-modal" role="presentation">
+  <div class="modal" role="dialog" aria-modal="true" aria-labelledby="conn-modal-title">
+    <header class="modal-head">
+      <h3 id="conn-modal-title">Connection settings</h3>
+      <button type="button" class="modal-close" id="conn-modal-close" aria-label="Close dialog">×</button>
+    </header>
+    <div class="modal-body">
+      <div id="telegram-connect-panel" class="conn-panel hidden">
+        <h3>Connect Telegram</h3>
+        <p class="conn-sub">Enter your own Telegram API credentials. They are stored only on this computer.</p>
+        <div class="conn-row">
+          <label>API ID
+            <input id="telegram-api-id" type="text" inputmode="numeric" autocomplete="off" placeholder="1234567">
+          </label>
+          <label>API hash
+            <input id="telegram-api-hash" type="text" autocomplete="off" placeholder="32 hex characters">
+          </label>
+        </div>
+        <div class="conn-actions">
+          <button id="save-telegram-creds" type="button" class="primary">Save credentials</button>
+          <button id="cancel-telegram-creds" type="button">Cancel</button>
+        </div>
+        <p class="conn-note">After saving, use <strong>Refresh Telegram</strong> in the header to reload your chats with the new credentials.</p>
+        <div id="telegram-connect-status" class="conn-status-out"></div>
+      </div>
+      <div id="meta-panel" class="conn-panel hidden">
+        <h3>Meta Ad Library</h3>
+        <p class="conn-sub">No access token or app review is needed. The dashboard uses a local scraper package if it is installed.</p>
+        <div class="meta-country-row">
+          <label for="meta-country">Ad Library country</label>
+          <select id="meta-country"></select>
+        </div>
+        <div class="conn-actions">
+          <button id="meta-test" type="button" class="primary">Test connection</button>
+          <button id="meta-diagnose" type="button">Diagnose</button>
+          <button id="meta-save-country" type="button">Save country</button>
+        </div>
+        <div id="meta-log" class="meta-log"></div>
+      </div>
+    </div>
+  </div>
+</div>
+<div class="toast-stack" id="toast-stack" aria-live="polite"></div>
+
+  <script>
+
+    const chatsEl = document.querySelector("#chats");
+
+    const resultsEl = document.querySelector("#results");
+
+    const scanButton = document.querySelector("#scan");
+
+    const cancelButton = document.querySelector("#cancel-scan");
+
+    const progressFill = document.querySelector("#progress-fill");
+
+    const selectedSummary = document.querySelector("#selection-summary");
+
+    let chats = [];
+
+    let statusTimer;
+
+    let chatListInitialized = false;
+
+
+
+    function isoDate(date) {
+
+      return new Date(date.getTime() - date.getTimezoneOffset() * 60000).toISOString().slice(0, 10);
+
+    }
+
+    const today = new Date();
+
+    document.querySelector("#end-date").value = isoDate(today);
+
+    const monthAgo = new Date(today);
+
+    monthAgo.setDate(monthAgo.getDate() - 30);
+
+    document.querySelector("#start-date").value = isoDate(monthAgo);
+
+
+
+    async function request(path, options = {}) {
+
+      const response = await fetch(path, {
+
+        headers: { "Content-Type": "application/json" },
+
+        ...options
+
+      });
+
+      const body = await response.json();
+
+      if (!response.ok) throw new Error(body.error || response.statusText);
+
+      return body;
+
+    }
+
+    function setStatus(text, error = false) {
+
+      if (!text) return;
+
+      var msg = String(text);
+
+      if (msg.startsWith('{') || msg.startsWith('[')) {
+
+        try { msg = JSON.stringify(JSON.parse(msg), null, 2); } catch (e) { msg = String(text); }
+
+      }
+
+      if (window.__notify) {
+
+        window.__notify(msg, error ? 'error' : 'info', error ? 'Error' : 'Status');
+
+      }
+
+    }
+
+    function renderLogin(state) {
+
+      const panel = document.querySelector("#login-panel");
+
+      panel.hidden = !state.needs_login;
+
+      document.querySelector("#phone-step").hidden = state.login_stage !== "phone";
+
+      document.querySelector("#code-step").hidden = state.login_stage !== "code";
+
+      document.querySelector("#password-step").hidden = state.login_stage !== "password";
+
+    }
+
+    function renderChats() {
+
+      const selected = new Set(
+
+        [...chatsEl.querySelectorAll("input[type=checkbox]:checked")].map((item) => item.value)
+
+      );
+
+      chatsEl.replaceChildren();
+
+      if (!chats.length) {
+
+        chatsEl.textContent = "No channels or groups loaded yet.";
+
+        updateSelectionSummary();
+
+        return;
+
+      }
+
+      for (const chat of chats) {
+
+        const label = document.createElement("label");
+
+        label.className = "chat-option";
+
+        const checkbox = document.createElement("input");
+
+        checkbox.type = "checkbox";
+
+        checkbox.value = chat.id;
+
+        checkbox.checked = chatListInitialized && selected.has(String(chat.id));
+
+        checkbox.disabled = Boolean(window.scanIsRunning);
+
+        const text = document.createElement("span");
+
+        text.textContent = `${chat.title} (${chat.kind})`;
+
+        label.append(checkbox, text);
+
+        chatsEl.append(label);
+
+      }
+
+      chatListInitialized = true;
+
+      updateSelectionSummary();
+
+    }
+
+    function updateSelectionSummary() {
+
+      const selected = chatsEl.querySelectorAll("input[type=checkbox]:checked").length;
+
+      selectedSummary.textContent = selected
+
+        ? `${selected} of ${chats.length} channel(s)/group(s) selected. Review the list before starting.`
+
+        : "No chats selected. Select only the channels/groups you want to scan.";
+
+      scanButton.disabled = Boolean(window.scanIsRunning) || selected === 0;
+
+    }
+
+    async function loadChats() {
+
+      setStatus("Connecting to Telegram and loading your joined chats. The first run may ask for sign-in in the terminal…");
+
+      try {
+
+        await request("/api/chats/reload", { method: "POST", body: "{}" });
+
+        await pollStatus();
+
+      } catch (error) {
+
+        setStatus(error.message, true);
+
+      }
+
+    }
+
+    async function pollStatus() {
+
+      clearTimeout(statusTimer);
+
+      try {
+
+        const state = await request("/api/status");
+
+        let statusMessage = state.message;
+
+        if (
+
+          state.running &&
+
+          state.job_kind === "scan" &&
+
+          state.message.startsWith("Loading the product recognizer") &&
+
+          state.model_download_total
+
+        ) {
+
+          const downloaded = state.model_download_bytes || 0;
+
+          const total = state.model_download_total;
+
+          const percent = Math.floor(downloaded * 100 / total);
+
+          statusMessage =
+
+            `Loading product recognizer: ${percent}% (${Math.floor(downloaded / 1048576)} / ` +
+
+            `${Math.ceil(total / 1048576)} MB). Message scanning starts after the model loads.`;
+
+        } else if (
+
+          !state.running &&
+
+          state.message.startsWith("Scan stopped") &&
+
+          state.model_download_total &&
+
+          state.model_download_bytes < state.model_download_total
+
+        ) {
+
+          const downloaded = state.model_download_bytes || 0;
+
+          const total = state.model_download_total;
+
+          const percent = Math.floor(downloaded * 100 / total);
+
+          statusMessage =
+
+            `Scan stopped before checking any messages. Model download is continuing: ${percent}% ` +
+
+            `(${Math.floor(downloaded / 1048576)} / ${Math.ceil(total / 1048576)} MB). ` +
+
+            `Please wait before starting another scan.`;
+
+        }
+
+        if (state.error) {
+
+          var errMsg = String(state.error);
+
+          if (errMsg.startsWith('{') || errMsg.startsWith('[')) {
+
+            try { errMsg = JSON.stringify(JSON.parse(errMsg), null, 2); } catch (e) { errMsg = String(state.error); }
+
+          }
+
+          setStatus(statusMessage + ' \u2014 ' + errMsg, true);
+
+        } else {
+
+          setStatus(statusMessage);
+
+        }
+
+        renderLogin(state);
+
+        window.scanIsRunning = state.running;
+
+        scanButton.disabled = state.running || !chatsEl.querySelector("input[type=checkbox]:checked");
+
+        cancelButton.hidden = !state.running || state.job_kind !== "scan";
+
+        cancelButton.disabled = Boolean(state.cancel_requested);
+
+        document.querySelectorAll("#select-all, #select-none, #start-date, #end-date, #market")
+
+          .forEach((control) => control.disabled = state.running);
+
+        chatsEl.querySelectorAll("input[type=checkbox]").forEach((checkbox) => checkbox.disabled = state.running);
+
+        if (state.chat_total) {
+
+            progressFill.parentElement.classList.toggle("running", state.running && state.job_kind === "scan");
+
+            if (state.running && state.job_kind === "scan") {
+
+              progressFill.style.transform = "";
+
+            } else {
+
+              const progress = /Scan (stopped|finished)/i.test(state.message) ? 1 : 0;
+
+              progressFill.style.transform = `scaleX(${progress})`;
+
+            }
+
+        } else {
+
+            progressFill.parentElement.classList.remove("running");
+
+            progressFill.style.transform = state.running ? "scaleX(.08)" : "scaleX(0)";
+
+        }
+
+        const chatResponse = await request("/api/chats");
+
+        if (JSON.stringify(chatResponse.chats) !== JSON.stringify(chats)) {
+
+          chats = chatResponse.chats;
+
+          renderChats();
+
+        }
+
+        if (!state.running && !state.error) {
+
+          await loadResults();
+
+          updateSelectionSummary();
+
+        }
+
+        if (state.running || chatResponse.loading) statusTimer = setTimeout(pollStatus, 1200);
+
+      } catch (error) {
+
+        setStatus(error.message, true);
+
+      }
+
+    }
+
+    async function loadResults() {
+
+      const response = await request("/api/results");
+
+      renderResults(response.products, response.scan, response.legacy_results_unreliable);
+
+    }
+
+    function makeLink(text, url) {
+
+      const link = document.createElement("a");
+
+      link.href = url;
+
+      link.target = "_blank";
+
+      link.rel = "noopener noreferrer";
+
+      link.textContent = text;
+
+      return link;
+
+    }
+
+    function addCell(row, content) {
+
+      const cell = document.createElement("td");
+
+      if (content instanceof Node) cell.append(content);
+
+      else cell.textContent = content;
+
+      row.append(cell);
+
+      return cell;
+
+    }
+
+    function renderOfferDetails(offers, product) {
+
+      const details = document.createElement("details");
+
+      details.className = "offer-list";
+
+      const summary = document.createElement("summary");
+
+      summary.textContent = `Compare ${offers.length} Telegram offer(s)`;
+
+      details.append(summary);
+
+      for (const offer of offers) {
+
+        const item = document.createElement("div");
+
+        item.className = "offer-item";
+
+        const supplier = document.createElement("strong");
+
+        supplier.textContent = offer.supplier;
+
+        item.append(supplier);
+
+        [
+
+          `Chat: ${offer.channel}`,
+
+          offer.price == null ? "Price: not detected" : `Listed price: ${offer.currency || ""} ${offer.price}${offer.price_unit ? ` per ${offer.price_unit}` : " (unit not detected)"}`,
+
+          `MOQ: ${offer.moq || "not detected"}`,
+
+          `Size: ${offer.size || "not detected"}`,
+
+          `Views: ${offer.views == null ? "not shown" : offer.views}`,
+
+          `Forwards: ${offer.forwards == null ? "not shown" : offer.forwards}`,
+
+          `Posted: ${offer.date ? new Date(offer.date).toLocaleString() : "unknown"}`
+
+        ].forEach((text) => {
+
+          const line = document.createElement("p");
+
+          line.textContent = text;
+
+          item.append(line);
+
+        });
+
+        if (offer.image) {
+
+          const image = document.createElement("img");
+
+          image.src = offer.image;
+
+          image.alt = `Photo for ${product}`;
+
+          item.append(image);
+
+        }
+
+        if (offer.telegram_url) item.append(makeLink("Open original Telegram post", offer.telegram_url));
+
+        const message = document.createElement("details");
+
+        const messageSummary = document.createElement("summary");
+
+        messageSummary.textContent = "Full post text";
+
+        const excerpt = document.createElement("p");
+
+        excerpt.textContent = offer.message;
+
+        message.append(messageSummary, excerpt);
+
+        item.append(message);
+
+        details.append(item);
+
+      }
+
+      return details;
+
+    }
+
+    function field(labelText, type, value, attributes = {}) {
+
+      const label = document.createElement("label");
+
+      label.textContent = labelText;
+
+      const input = document.createElement(
+
+        type === "select" ? "select" : type === "textarea" ? "textarea" : "input"
+
+      );
+
+      if (type !== "select" && type !== "textarea") input.type = type;
+
+      for (const [key, attributeValue] of Object.entries(attributes)) {
+
+        input[key] = attributeValue;
+
+      }
+
+      if (type === "select") {
+
+        var options = attributes.options || [
+
+          ["unknown", "Not checked"],
+
+          ["rising", "Rising"],
+
+          ["stable", "Stable"],
+
+          ["falling", "Falling"]
+
+        ];
+
+        for (const [optionValue, optionText] of options) {
+
+          const option = document.createElement("option");
+
+          option.value = optionValue;
+
+          option.textContent = optionText;
+
+          input.append(option);
+
+        }
+
+      }
+
+      input.value = value ?? "";
+
+      label.append(input);
+
+      return { label, input };
+
+    }
+
+    function renderMarketResearch(product) {
+
+      const box = document.createElement("div");
+
+      box.className = "research-box";
+
+      const links = document.createElement("div");
+
+      links.className = "research-links";
+
+      links.append(
+
+        makeLink("Open Google Trends", product.google_trends_url),
+
+        makeLink("Open Meta Ad Library", product.meta_ads_url),
+
+        makeLink("Search Google Shopping", product.shopping_url),
+
+        makeLink("Search TikTok", product.tiktok_url)
+
+      );
+
+      box.append(links);
+
+      const evidence = product.market_research || {};
+
+      const [trendField, trend] = Object.values(field("Google Trends interest", "select", evidence.trend_direction || "unknown"));
+
+      const [adsField, ads] = Object.values(field("Active Meta ads found (enter 0 if none)", "number", evidence.active_ads, { min: "0", step: "1" }));
+
+      const [ageField, adAge] = Object.values(field("Age in days of oldest active ad", "number", evidence.oldest_ad_days, { min: "0", step: "1" }));
+
+      const [viewsField, socialViews] = Object.values(field("Social post views (observed)", "number", evidence.social_views, { min: "0", step: "1" }));
+
+      const [interactionsField, socialInteractions] = Object.values(field("Social likes/comments/shares (observed)", "number", evidence.social_interactions, { min: "0", step: "1" }));
+
+      const [sourceField, socialSource] = Object.values(field("Social post URL (optional)", "url", evidence.social_source_url));
+
+      const [notesField, notes] = Object.values(field("Research notes / ad evidence", "textarea", evidence.notes));
+
+      box.append(trendField, adsField, ageField, viewsField, interactionsField, sourceField, notesField);
+
+      const save = document.createElement("button");
+
+      save.type = "button";
+
+      save.textContent = "Save market research";
+
+      save.addEventListener("click", async () => {
+
+        save.disabled = true;
+
+        try {
+
+          await request("/api/research/save", {
+
+            method: "POST",
+
+            body: JSON.stringify({
+
+              product_key: product.key,
+
+              trend_direction: trend.value,
+
+              active_ads: ads.value,
+
+              oldest_ad_days: adAge.value,
+
+              social_views: socialViews.value,
+
+              social_interactions: socialInteractions.value,
+
+              social_source_url: socialSource.value,
+
+              notes: notes.value
+
+            })
+
+          });
+
+          setStatus("Research notes saved; the test-priority estimate has been updated.");
+
+          await loadResults();
+
+        } catch (error) {
+
+          setStatus(error.message, true);
+
+          save.disabled = false;
+
+        }
+
+      });
+
+      box.append(save);
+
+      const [urlField, competitorUrl] = Object.values(field("Competitor product page URL", "url", ""));
+
+      const fetchButton = document.createElement("button");
+
+      fetchButton.type = "button";
+
+      fetchButton.className = "secondary";
+
+      fetchButton.textContent = "Fetch competitor listing and price";
+
+      fetchButton.addEventListener("click", async () => {
+
+        if (!competitorUrl.value.trim()) {
+
+          setStatus("Paste a public competitor product-page URL first.", true);
+
+          return;
+
+        }
+
+        fetchButton.disabled = true;
+
+        setStatus("Checking that public product page for its listed title and price…");
+
+        try {
+
+          await request("/api/competitor/fetch", {
+
+            method: "POST",
+
+            body: JSON.stringify({ product_key: product.key, url: competitorUrl.value.trim() })
+
+          });
+
+          setStatus("Competitor listing checked. A price is shown only when the public page exposed one.");
+
+          await loadResults();
+
+        } catch (error) {
+
+          setStatus(error.message, true);
+
+          await loadResults();
+
+          fetchButton.disabled = false;
+
+        }
+
+      });
+
+      box.append(urlField, fetchButton);
+
+      for (const listing of product.competitor_listings || []) {
+
+        const result = document.createElement("div");
+
+        result.className = "competitor-item small";
+
+        if (listing.status === "failed") {
+
+          result.textContent = `Could not read ${listing.url}: ${listing.error_text}`;
+
+        } else {
+
+          const title = document.createElement("strong");
+
+          title.textContent = listing.title || "Competitor listing";
+
+          const price = document.createElement("p");
+
+          price.textContent = listing.price == null
+
+            ? "Public page did not expose a machine-readable price."
+
+            : `Competitor listed price: ${listing.currency || ""} ${listing.price}`;
+
+          result.append(title, price, makeLink("Open competitor page", listing.url));
+
+          const fetched = document.createElement("p");
+
+          fetched.className = "muted";
+
+          fetched.textContent = `Checked ${listing.fetched_at ? new Date(listing.fetched_at).toLocaleString() : "time unavailable"}`;
+
+          result.append(fetched);
+
+          if (listing.description) {
+
+            const description = document.createElement("p");
+
+            description.textContent = listing.description;
+
+            result.append(description);
+
+          }
+
+        }
+
+        box.append(result);
+
+      }
+
+      return box;
+
+    }
+
+    function renderResults(products, scan, legacyResultsUnreliable = false) {
+      resultsEl.replaceChildren();
+
+      const scanSummary = document.querySelector("#scan-summary");
+      if (scan) {
+        scanSummary.textContent =
+          `Last scan: ${scan.start_date} through ${scan.end_date} · ${scan.chat_count} chats · ` +
+          `${scan.scanned_messages} messages checked · ${scan.products_found} posts flagged for review · ` +
+          `${products.length} result row(s) · ${scan.status}.`;
+        if (legacyResultsUnreliable) {
+          scanSummary.textContent +=
+            " This older scan used an unsuitable name extractor; its product names are hidden. Run a new scan for corrected results.";
+        }
+      } else {
+        scanSummary.textContent = "";
+      }
+
+      const HEADERS = [
+        "#", "Product", "Supplier prices", "Competitor prices", "Meta ads",
+        "Identification", "Engagement", "Priority", "Details", "Telegram post"
+      ];
+
+      function buildHead() {
+        const head = document.createElement("thead");
+        const row = document.createElement("tr");
+        HEADERS.forEach((title) => {
+          const th = document.createElement("th");
+          th.textContent = title;
+          row.append(th);
+        });
+        head.append(row);
+        return head;
+      }
+
+      function scoreClass(score) {
+        if (score == null) return "low";
+        if (score >= 70) return "good";
+        if (score >= 45) return "mid";
+        return "low";
+      }
+
+      function priceText(offer) {
+        if (offer.price == null) return null;
+        const head = `${offer.currency || ""} ${offer.price}`.trim();
+        return offer.price_unit ? `${head} / ${offer.price_unit}` : head;
+      }
+
+      function shortText(text, limit) {
+        const value = (text == null ? "" : String(text)).replace(/\s+/g, " ").trim();
+        return value.length > limit ? value.slice(0, limit - 1) + "\u2026" : value;
+      }
+
+      if (!products.length) {
+        resultsEl.className = "table-wrap";
+        const table = document.createElement("table");
+        table.append(buildHead());
+        const body = document.createElement("tbody");
+        const tr = document.createElement("tr");
+        const td = document.createElement("td");
+        td.colSpan = HEADERS.length;
+        td.className = "empty";
+        td.textContent = legacyResultsUnreliable
+          ? "These old results are hidden because the previous extractor produced unreliable product-name fragments. Run a fresh scan; Arabic product posts will be listed for review with their original message and photo instead of a guessed name."
+          : !scan
+            ? "No scan has finished yet. Choose a few chats and a short date range to try it."
+            : scan.status === "cancelled"
+              ? `The scan was stopped after checking ${scan.scanned_messages} messages. Product results collected before stopping are shown here if any were found.`
+              : scan.status === "failed"
+                ? "The last scan failed. Check the status message above, then retry with a smaller number of chats or a shorter date range."
+                : "The scan completed, but no posts matched the current extraction rules. Try more chats or a different date range.";
+        tr.append(td);
+        body.append(tr);
+        table.append(body);
+        resultsEl.append(table);
+        return;
+      }
+
+      resultsEl.className = "";
+      const wrapper = document.createElement("div");
+      wrapper.className = "table-wrap";
+      const table = document.createElement("table");
+      table.append(buildHead());
+      const body = document.createElement("tbody");
+
+      products.forEach((product, index) => {
+        window.__productIndex = window.__productIndex || {};
+        window.__productIndex[product.key] = product;
+
+        const row = document.createElement("tr");
+
+        // ---- # ----
+        const indexCell = document.createElement("td");
+        const indexBadge = document.createElement("span");
+        indexBadge.className = "row-index";
+        indexBadge.textContent = String(index + 1);
+        indexCell.append(indexBadge);
+        row.append(indexCell);
+
+        // ---- Product ----
+        const productCell = document.createElement("td");
+        const cellWrap = document.createElement("div");
+        cellWrap.className = "product-cell";
+
+        const firstImage = product.offers.find((offer) => offer.image)?.image;
+        if (firstImage) {
+          const image = document.createElement("img");
+          image.className = "product-thumb";
+          image.src = firstImage;
+          image.alt = `Telegram photo for ${product.product}`;
+          image.loading = "lazy";
+          cellWrap.append(image);
+        } else {
+          const placeholder = document.createElement("div");
+          placeholder.className = "product-thumb placeholder";
+          placeholder.textContent = "\u25A7";
+          placeholder.title = "No photo in this post";
+          cellWrap.append(placeholder);
+        }
+
+        const main = document.createElement("div");
+        main.className = "product-main";
+
+        const name = document.createElement("div");
+        name.className = "product-name";
+        name.textContent = product.product;
+        main.append(name);
+
+        const chips = document.createElement("div");
+        chips.className = "chip-row";
+        if (product.lowest_price != null) {
+          const tag = document.createElement("span");
+          tag.className = "price-tag";
+          tag.append(document.createTextNode(product.price_currency ? product.price_currency + " " : ""));
+          tag.append(document.createTextNode(String(product.lowest_price)));
+          if (product.price_unit) {
+            const unit = document.createElement("span");
+            unit.className = "cur";
+            unit.textContent = " / " + product.price_unit;
+            tag.append(unit);
+          }
+          tag.title = "Lowest listed supplier price";
+          chips.append(tag);
+        }
+        if (product.candidate_only) {
+          const note = document.createElement("span");
+          note.className = "pill mid";
+          note.textContent = "unverified title";
+          chips.append(note);
+        }
+        if (chips.childNodes.length) main.append(chips);
+
+        const description = document.createElement("p");
+        description.className = "product-desc";
+        const fullDesc = product.description || "No description text captured";
+        description.textContent = shortText(fullDesc, 120) || "No description text captured";
+        description.setAttribute("data-full", fullDesc);
+        main.append(description);
+
+        const profileButton = document.createElement("button");
+        profileButton.type = "button";
+        profileButton.className = "btn-profile";
+        profileButton.textContent = "Product Profile";
+        profileButton.addEventListener("click", () => window.__openProductProfile(product.key));
+        main.append(profileButton);
+
+        cellWrap.append(main);
+        productCell.append(cellWrap);
+        row.append(productCell);
+
+        // ---- Supplier prices ----
+        const supplierCell = document.createElement("td");
+        const priceList = document.createElement("div");
+        priceList.className = "price-list";
+        for (const offer of product.offers) {
+          const item = document.createElement("div");
+          item.className = "price-row";
+          const supplier = document.createElement("span");
+          supplier.className = "price-supplier";
+          supplier.textContent = offer.supplier || "Unknown supplier";
+          supplier.title = offer.supplier || "";
+          const value = document.createElement("span");
+          const text = priceText(offer);
+          if (text) {
+            value.className = "price-value";
+            value.textContent = text;
+          } else {
+            value.className = "price-value none";
+            value.textContent = "no price detected";
+          }
+          item.append(supplier, value);
+          priceList.append(item);
+        }
+        if (!product.offers.length) {
+          const none = document.createElement("span");
+          none.className = "empty-cell";
+          none.textContent = "No supplier offers";
+          priceList.append(none);
+        }
+        supplierCell.append(priceList);
+        row.append(supplierCell);
+
+        // ---- Competitor prices ----
+        const competitorCell = document.createElement("td");
+        const competitorList = document.createElement("div");
+        competitorList.className = "competitor-list";
+        for (const listing of product.competitor_listings || []) {
+          const item = document.createElement("div");
+          item.className = "competitor-item";
+          const title = document.createElement("span");
+          title.className = "title";
+          title.textContent = listing.title || "Competitor listing";
+          const meta = document.createElement("span");
+          if (listing.status === "ok") {
+            meta.className = "price-tag";
+            meta.textContent = listing.price == null
+              ? "price not exposed"
+              : `${listing.currency || ""} ${listing.price}`.trim();
+          } else {
+            meta.className = "pill low";
+            meta.textContent = listing.status || "unavailable";
+          }
+          item.append(title, meta);
+          competitorList.append(item);
+        }
+        if (!(product.competitor_listings || []).length) {
+          const none = document.createElement("span");
+          none.className = "empty-cell";
+          none.textContent = "No competitor listings";
+          competitorList.append(none);
+        }
+        competitorCell.append(competitorList);
+        row.append(competitorCell);
+
+        // ---- Meta ads ----
+        const metaCell = document.createElement("td");
+        const metaBox = document.createElement("div");
+        metaBox.className = "meta-cell";
+        const ads = product.active_meta_ads || [];
+        if (ads.length) {
+          const pill = document.createElement("span");
+          pill.className = "pill ok";
+          pill.textContent = `${ads.length} ad${ads.length === 1 ? "" : "s"}`;
+          metaBox.append(pill);
+        } else {
+          const pill = document.createElement("span");
+          pill.className = "pill neutral";
+          pill.textContent = "—";
+          metaBox.append(pill);
+        }
+        metaCell.append(metaBox);
+        row.append(metaCell);
+
+        // ---- Identification ----
+        const identCell = document.createElement("td");
+        const identBox = document.createElement("div");
+        identBox.className = "ident-cell";
+        if (product.identification_method) {
+          const pill = document.createElement("span");
+          pill.className = product.identified_from_photo ? "pill ok" : "pill info";
+          pill.textContent = product.identified_from_photo ? "from photo" : product.identification_method;
+          identBox.append(pill);
+          const line = document.createElement("span");
+          line.className = "ident-line";
+          const confidence = product.identification_confidence;
+          line.textContent = confidence == null
+            ? shortText(product.product, 40)
+            : `confidence ${Math.round(Number(confidence) * 100)}%`;
+          identBox.append(line);
+        } else {
+          const pill = document.createElement("span");
+          pill.className = "pill neutral";
+          pill.textContent = "not identified";
+          identBox.append(pill);
+        }
+        identCell.append(identBox);
+        row.append(identCell);
+
+        // ---- Engagement ----
+        const engageCell = document.createElement("td");
+        const views = document.createElement("div");
+        views.className = "engage-views";
+        views.textContent = product.max_views ?? "—";
+        const viewsLabel = document.createElement("div");
+        viewsLabel.className = "engage-label";
+        viewsLabel.textContent = "max views";
+        engageCell.append(views, viewsLabel);
+        const stats = document.createElement("div");
+        stats.className = "stat-chips";
+        [["reactions", product.total_reactions], ["comments", product.total_comments], ["forwards", product.total_forwards]]
+          .filter(([, value]) => value != null)
+          .forEach(([label, value]) => {
+            const chip = document.createElement("span");
+            chip.className = "stat-chip";
+            chip.textContent = `${value} ${label}`;
+            stats.append(chip);
+          });
+        if (stats.childNodes.length) engageCell.append(stats);
+        row.append(engageCell);
+
+        // ---- Priority ----
+        const scoreCell = document.createElement("td");
+        if (product.candidate_only) {
+          const pill = document.createElement("span");
+          pill.className = "pill mid";
+          pill.textContent = "Review post";
+          scoreCell.append(pill);
+          const note = document.createElement("p");
+          note.className = "muted small";
+          note.textContent = "No reliable product name detected";
+          scoreCell.append(note);
+        } else {
+          const score = document.createElement("span");
+          score.className = `score ${scoreClass(product.score)}`;
+          score.textContent = `${product.score}/100`;
+          scoreCell.append(score);
+          const breakdown = document.createElement("details");
+          const breakdownSummary = document.createElement("summary");
+          breakdownSummary.textContent = product.research_coverage
+            ? `Research-informed · ${product.research_coverage} source type(s)`
+            : "Preliminary Telegram-only score";
+          const breakdownText = document.createElement("p");
+          const points = product.score_breakdown;
+          const marketPoints = Object.entries(points.market_research || {})
+            .filter(([key]) => key !== "telegram_baseline")
+            .map(([key, value]) => `${key.replaceAll("_", " ")} ${value}/20`);
+          breakdownText.textContent =
+            `Telegram baseline ${product.telegram_score}/100: posts ${points.telegram_post_frequency}/25, distinct suppliers ${points.supplier_mentions}/20, views ${points.post_views}/20, offer details ${points.offer_detail_completeness}/20, recency ${points.recency}/15. ` +
+            `Recorded market observations: ${marketPoints.length ? marketPoints.join("; ") : "none yet"}. These are user-recorded clues with partial weight, not sales proof or a probability of success.`;
+          breakdown.append(breakdownSummary, breakdownText);
+          scoreCell.append(breakdown);
+        }
+        row.append(scoreCell);
+
+        // ---- Details ----
+        const detailsCell = document.createElement("td");
+        const detailsMeta = document.createElement("div");
+        detailsMeta.className = "details-meta";
+        detailsMeta.textContent = `${product.posts} post(s) · ${product.sellers} supplier(s)`;
+        detailsCell.append(detailsMeta);
+        detailsCell.append(renderOfferDetails(product.offers, product.product));
+        const attributes = Object.entries(product.attributes || {})
+          .map(([key, values]) => `${key.replaceAll("_", " ")}: ${values.join(", ")}`);
+        if (attributes.length) {
+          const attributeDetails = document.createElement("details");
+          const summary = document.createElement("summary");
+          summary.textContent = "Extracted product specifications";
+          const text = document.createElement("p");
+          text.textContent = attributes.join(" · ");
+          attributeDetails.append(summary, text);
+          detailsCell.append(attributeDetails);
+        }
+        row.append(detailsCell);
+
+        // ---- Telegram post ----
+        const telegramCell = document.createElement("td");
+        const telegramOffer = product.offers.find((offer) => offer.telegram_url);
+        if (telegramOffer) telegramCell.append(makeLink("Open Telegram post", telegramOffer.telegram_url));
+        else telegramCell.textContent = "No direct link available";
+        row.append(telegramCell);
+
+        body.append(row);
+      });
+
+      table.append(body);
+      wrapper.append(table);
+      resultsEl.append(wrapper);
+
+      const warning = document.createElement("p");
+      warning.className = "warning";
+      warning.textContent = "Google Trends and Meta Ad Library open as public research pages; their content cannot be reliably collected automatically without authorized APIs. Enter only what you actually observe. Competitor pages are read for public structured product data, and sites may block access. Supplier and competitor prices are not directly comparable unless currency, unit, shipping and tax basis match. A test-priority score is not proof of demand or profit.";
+      resultsEl.append(warning);
+    }
+
+    document.querySelector("#send-code").addEventListener("click", async () => {
+
+      try {
+
+        await request("/api/auth/send-code", {
+
+          method: "POST",
+
+          body: JSON.stringify({ phone: document.querySelector("#phone").value })
+
+        });
+
+        await pollStatus();
+
+      } catch (error) {
+
+        setStatus(error.message, true);
+
+      }
+
+    });
+
+    document.querySelector("#verify-code").addEventListener("click", async () => {
+
+      const codeInput = document.querySelector("#login-code");
+
+      const code = codeInput.value;
+
+      codeInput.value = "";
+
+      try {
+
+        await request("/api/auth/verify-code", {
+
+          method: "POST",
+
+          body: JSON.stringify({ code })
+
+        });
+
+        await pollStatus();
+
+      } catch (error) {
+
+        setStatus(error.message, true);
+
+      }
+
+    });
+
+    document.querySelector("#verify-password").addEventListener("click", async () => {
+
+      const passwordInput = document.querySelector("#login-password");
+
+      const password = passwordInput.value;
+
+      passwordInput.value = "";
+
+      try {
+
+        await request("/api/auth/verify-password", {
+
+          method: "POST",
+
+          body: JSON.stringify({ password })
+
+        });
+
+        await pollStatus();
+
+      } catch (error) {
+
+        setStatus(error.message, true);
+
+      }
+
+    });
+
+    chatsEl.addEventListener("change", updateSelectionSummary);
+
+    document.querySelector("#select-all").addEventListener("click", () => {
+
+      chatsEl.querySelectorAll("input[type=checkbox]").forEach((checkbox) => checkbox.checked = true);
+
+      updateSelectionSummary();
+
+    });
+
+    document.querySelector("#select-none").addEventListener("click", () => {
+
+      chatsEl.querySelectorAll("input[type=checkbox]").forEach((checkbox) => checkbox.checked = false);
+
+      updateSelectionSummary();
+
+    });
+
+    scanButton.addEventListener("click", async () => {
+
+      const chatIds = [...chatsEl.querySelectorAll("input[type=checkbox]:checked")].map((item) => item.value);
+
+      if (!chatIds.length) {
+
+        setStatus("Select at least one Telegram channel or group first.", true);
+
+        return;
+
+      }
+
+      const startDate = document.querySelector("#start-date").value;
+
+      const endDate = document.querySelector("#end-date").value;
+
+      const selectedNames = [...chatsEl.querySelectorAll("input[type=checkbox]:checked")]
+
+        .map((input) => input.parentElement.textContent.trim());
+
+      const confirmed = window.confirm(
+
+        `About to scan ${chatIds.length} Telegram channel/group(s) from ${startDate} through ${endDate}.\n\n` +
+
+        `This reads message history and may take a while. You can stop it at any time; results collected so far will be kept.\n\n` +
+
+        `Selected chats:\n${selectedNames.slice(0, 8).join("\n")}` +
+
+        (selectedNames.length > 8 ? `\n…and ${selectedNames.length - 8} more.` : "") +
+
+        `\n\nThis does not send messages, join chats, or change anything in Telegram. Start scan?`
+
+      );
+
+      if (!confirmed) return;
+
+      scanButton.disabled = true;
+
+      try {
+
+        await request("/api/scan", {
+
+          method: "POST",
+
+          body: JSON.stringify({
+
+            chat_ids: chatIds,
+
+            start_date: startDate,
+
+            end_date: endDate,
+
+            market: document.querySelector("#market").value
+
+          })
+
+        });
+
+        await pollStatus();
+
+      } catch (error) {
+
+        scanButton.disabled = false;
+
+        setStatus(error.message, true);
+
+      }
+
+    });
+
+    cancelButton.addEventListener("click", async () => {
+
+      cancelButton.disabled = true;
+
+      try {
+
+        await request("/api/scan/cancel", { method: "POST", body: "{}" });
+
+        setStatus("Stop requested. Finishing the current message and saving partial results…");
+
+        await pollStatus();
+
+      } catch (error) {
+
+        cancelButton.disabled = false;
+
+        setStatus(error.message, true);
+
+      }
+
+    });
+
+    pollStatus();
+
+  </script>
+
+<script>
+(function () {
+  // ---------- element refs ----------
+  var telegramDotEl = document.getElementById('telegram-dot');
+  var telegramLabelEl = document.getElementById('telegram-label');
+  var metaDotEl = document.getElementById('meta-dot');
+  var metaLabelEl = document.getElementById('meta-label');
+  var btnConnectTelegram = document.getElementById('btn-connect-telegram');
+  var btnTestMeta = document.getElementById('btn-test-meta');
+  var btnRefreshTelegram = document.getElementById('btn-refresh-telegram');
+  var btnConnectTelegram = document.getElementById('btn-connect-telegram');
+  var btnTestMeta = document.getElementById('btn-test-meta');
+  var telegramConnectPanel = document.getElementById('telegram-connect-panel');
+  var metaPanel = document.getElementById('meta-panel');
+  var telegramApiIdInput = document.getElementById('telegram-api-id');
+  var telegramApiHashInput = document.getElementById('telegram-api-hash');
+  var saveTelegramCredsBtn = document.getElementById('save-telegram-creds');
+  var cancelTelegramCredsBtn = document.getElementById('cancel-telegram-creds');
+  var telegramConnectStatusEl = document.getElementById('telegram-connect-status');
+  var metaCountrySelect = document.getElementById('meta-country');
+  var metaTestBtn = document.getElementById('meta-test');
+  var metaDiagnoseBtn = document.getElementById('meta-diagnose');
+  var metaSaveCountryBtn = document.getElementById('meta-save-country');
+  var metaLogEl = document.getElementById('meta-log');
+
+  // ---------- helpers ----------
+  function setStatusText(text, error) {
+    toast(text, error ? "error" : "info", error ? "Telegram" : "Telegram settings");
+    if (telegramConnectStatusEl) {
+      telegramConnectStatusEl.textContent = text || '';
+      telegramConnectStatusEl.style.color = error ? '#922' : '#456076';
+    }
+  }
+
+  function setMetaLog(text, error) {
+    toast(text, error ? "error" : "info", "Meta Ad Library");
+    if (!metaLogEl) return;
+    metaLogEl.textContent = text || '';
+    metaLogEl.classList.toggle('error', !!error);
+  }
+
+  function toast(message, type, title) {
+    if (!message) return;
+    var msg = String(message);
+    if (msg.startsWith('{') || msg.startsWith('[')) {
+      try { msg = JSON.stringify(JSON.parse(msg), null, 2); } catch (e) { msg = String(message); }
+    }
+    if (window.__notify) window.__notify(msg, type, title);
+  }
+
+  function renderDot(el, state) {
+    if (!el) return;
+    el.className = 'conn-btn-dot';
+    if (state === 'ok') el.classList.add('dot-ok');
+    else if (state === 'warn') el.classList.add('dot-warn');
+    else el.classList.add('dot-missing');
+  }
+
+  // ---------- connection status (Telegram + Meta) ----------
+  function refreshConnectionStatus() {
+    request('/api/settings').then(function (s) {
+      var tg = !!s && !!s.telegram_configured;
+      var meta = !!s && !!s.meta_configured;
+      if (tg) {
+        renderDot(telegramDotEl, 'ok');
+        telegramLabelEl.textContent = 'Telegram connected';
+      } else {
+        renderDot(telegramDotEl, 'missing');
+        telegramLabelEl.textContent = 'Telegram not connected';
+      }
+      if (meta) {
+        renderDot(metaDotEl, 'ok');
+        metaLabelEl.textContent = 'Meta Ad Library ready';
+      } else {
+        renderDot(metaDotEl, 'warn');
+        metaLabelEl.textContent = 'Meta Ad Library unavailable';
+      }
+      populateMetaCountry(s && s.meta_ad_country, s && s.meta_ad_countries);
+    }).catch(function () {
+      renderDot(telegramDotEl, 'missing');
+      telegramLabelEl.textContent = 'Telegram not connected';
+      renderDot(metaDotEl, 'warn');
+      metaLabelEl.textContent = 'Meta Ad Library unavailable';
+    });
+  }
+
+  function populateMetaCountry(selectedCode, countries) {
+    if (!metaCountrySelect) return;
+    var prev = metaCountrySelect.value;
+    metaCountrySelect.innerHTML = '';
+    var options = countries || [];
+    for (var i = 0; i < options.length; i++) {
+      var opt = document.createElement('option');
+      opt.value = options[i].code;
+      opt.textContent = options[i].name + ' (' + options[i].code + ')';
+      if (selectedCode && options[i].code === selectedCode) opt.selected = true;
+      metaCountrySelect.appendChild(opt);
+    }
+    if (!selectedCode && prev) metaCountrySelect.value = prev;
+  }
+
+  // ---------- Telegram connect form ----------
+  function openTelegramConnect() {
+    if (window.__openConnModal) window.__openConnModal("telegram");
+    if (metaPanel) metaPanel.classList.add('hidden');
+    if (telegramConnectPanel) telegramConnectPanel.classList.remove('hidden');
+    setStatusText('');
+    if (telegramApiIdInput) telegramApiIdInput.focus();
+  }
+
+  function closeTelegramConnect() {
+    if (window.__closeConnModal) window.__closeConnModal();
+    if (telegramConnectPanel) telegramConnectPanel.classList.add('hidden');
+    setStatusText('');
+  }
+
+  function saveTelegramCredentials() {
+    var apiId = telegramApiIdInput ? telegramApiIdInput.value.trim() : '';
+    var apiHash = telegramApiHashInput ? telegramApiHashInput.value.trim() : '';
+    if (!apiId || !apiHash) {
+      setStatusText('Enter both the API ID and the API hash.', true);
+      return;
+    }
+    if (saveTelegramCredsBtn) saveTelegramCredsBtn.disabled = true;
+    setStatusText('Saving...');
+    request('/api/settings', {
+      method: 'POST',
+      body: JSON.stringify({ telegram_api_id: apiId, telegram_api_hash: apiHash })
+    }).then(function () {
+      setStatusText('Saved. Telegram credentials are stored locally.');
+      if (telegramApiIdInput) telegramApiIdInput.value = '';
+      if (telegramApiHashInput) telegramApiHashInput.value = '';
+      refreshConnectionStatus();
+      setTimeout(closeTelegramConnect, 900);
+    }).catch(function (err) {
+      setStatusText(String(err && err.message || err), true);
+    }).then(function () {
+      if (saveTelegramCredsBtn) saveTelegramCredsBtn.disabled = false;
+    });
+  }
+
+  // ---------- Meta Ad Library panel ----------
+  function openMetaPanel() {
+    if (window.__openConnModal) window.__openConnModal("meta");
+    if (telegramConnectPanel) telegramConnectPanel.classList.add('hidden');
+    if (metaPanel) metaPanel.classList.remove('hidden');
+    setMetaLog('');
+    refreshConnectionStatus();
+  }
+
+  function closeMetaPanel() {
+    if (window.__closeConnModal) window.__closeConnModal();
+    if (metaPanel) metaPanel.classList.add('hidden');
+    setMetaLog('');
+  }
+
+  function testMetaConnection() {
+    if (metaTestBtn) metaTestBtn.disabled = true;
+    setMetaLog('Testing Meta Ad Library...');
+    request('/api/meta-ads/test', { method: 'POST', body: JSON.stringify({}) })
+      .then(function (r) {
+        var msg = (r && r.message) || ('Matching ads: ' + (r && r.matching_ads));
+        setMetaLog(msg || 'Connection OK.');
+        refreshConnectionStatus();
+      })
+      .catch(function (err) {
+        setMetaLog(String(err && err.message || err), true);
+      })
+      .then(function () {
+        if (metaTestBtn) metaTestBtn.disabled = false;
+      });
+  }
+
+  function diagnoseMeta() {
+    if (metaDiagnoseBtn) metaDiagnoseBtn.disabled = true;
+    setMetaLog('Diagnosing...');
+    request('/api/meta-ads/diagnose', { method: 'POST', body: JSON.stringify({}) })
+      .then(function (r) {
+        var parts = [];
+        if (r && r.category) parts.push('[' + r.category + ']');
+        if (r && r.message) parts.push(r.message);
+        if (r && r.detail) parts.push(r.detail);
+        var isErr = !!(r && r.category && r.category !== 'ok');
+        setMetaLog(parts.join(' ') || 'Diagnosis complete.', isErr);
+      })
+      .catch(function (err) {
+        setMetaLog(String(err && err.message || err), true);
+      })
+      .then(function () {
+        if (metaDiagnoseBtn) metaDiagnoseBtn.disabled = false;
+      });
+  }
+
+  function saveMetaCountry() {
+    if (!metaCountrySelect) return;
+    var code = metaCountrySelect.value;
+    if (!code) return;
+    if (metaSaveCountryBtn) metaSaveCountryBtn.disabled = true;
+    setMetaLog('Saving country...');
+    request('/api/settings', { method: 'POST', body: JSON.stringify({ meta_ad_country: code }) })
+      .then(function () {
+        setMetaLog('Saved. Ad Library country is now ' + code + '.');
+        refreshConnectionStatus();
+      })
+      .catch(function (err) {
+        setMetaLog(String(err && err.message || err), true);
+      })
+      .then(function () {
+        if (metaSaveCountryBtn) metaSaveCountryBtn.disabled = false;
+      });
+  }
+
+  // ---------- wiring ----------
+  var btnRefreshTelegram = document.getElementById('btn-refresh-telegram');
+  function refreshTelegram() {
+    request("/api/chats/reload", { method: "POST", body: JSON.stringify({}) })
+      .then(function () { setStatusText('Telegram chats reloading...'); })
+      .catch(function (err) { setStatusText(String(err && err.message || err), true); });
+  }
+  if (btnConnectTelegram) {
+    btnConnectTelegram.addEventListener('click', function () {
+      if (telegramConnectPanel && !telegramConnectPanel.classList.contains('hidden')) {
+        closeTelegramConnect();
+      } else {
+        openTelegramConnect();
+      }
+    });
+  }
+  if (btnRefreshTelegram) {
+    btnRefreshTelegram.addEventListener('click', refreshTelegram);
+  }
+  if (btnTestMeta) {
+    btnTestMeta.addEventListener('click', function () {
+      if (metaPanel && !metaPanel.classList.contains('hidden')) {
+        closeMetaPanel();
+      } else {
+        openMetaPanel();
+      }
+    });
+  }
+  if (saveTelegramCredsBtn) saveTelegramCredsBtn.addEventListener('click', saveTelegramCredentials);
+  if (cancelTelegramCredsBtn) cancelTelegramCredsBtn.addEventListener('click', closeTelegramConnect);
+  if (metaTestBtn) metaTestBtn.addEventListener('click', testMetaConnection);
+  if (metaDiagnoseBtn) metaDiagnoseBtn.addEventListener('click', diagnoseMeta);
+  if (metaSaveCountryBtn) metaSaveCountryBtn.addEventListener('click', saveMetaCountry);
+
+  window.__refreshConnectionStatus = refreshConnectionStatus;
+  refreshConnectionStatus();
+})();
+</script>
+
+<script>
+(function () {
+  var tbody = document.getElementById('missing-scans-tbody');
+  var empty = document.getElementById('missing-scans-empty');
+  var statusEl = document.getElementById('missing-scans-status');
+  var refreshBtn = document.getElementById('missing-scans-refresh');
+
+  function fmtDate(iso) {
+    if (!iso) return '—';
+    try {
+      return new Date(iso + 'T00:00:00').toLocaleDateString();
+    } catch (e) {
+      return iso;
+    }
+  }
+
+  var BTN_CSS = 'border:1px solid var(--line); color:#3f526b; background:#fff; border-radius:6px; padding:4px 9px; cursor:pointer; font-size:12px; margin:0 4px 0 0;';
+
+  function makeActionBtn(label, danger, scanId, handler) {
+    var btn = document.createElement('button');
+    btn.type = 'button';
+    btn.textContent = label;
+    btn.style.cssText = BTN_CSS + (danger ? ' color:#a4342c;' : '');
+    btn.addEventListener('click', function () {
+      handler(scanId);
+    });
+    return btn;
+  }
+
+  // Build rows via a small builder so each button closes over that row's scanId
+  // (a plain for-loop with `var` would share one variable across every row).
+  function buildRow(s) {
+    var row = document.createElement('tr');
+    var scanId = s.scan_id;
+    row.setAttribute('data-scan-id', scanId || '');
+    row.setAttribute('data-scan-name', s.name || '');
+    var cols = [
+      s.name || 'Unnamed scan',
+      (s.start_date || '') + ' \u2192 ' + (s.end_date || ''),
+      s.chat_count != null ? String(s.chat_count) : '\u2014',
+      s.products_found != null ? String(s.products_found) : '\u2014',
+      s.status || 'unknown'
+    ];
+    for (var c = 0; c < cols.length; c++) {
+      var td = document.createElement('td');
+      td.textContent = cols[c];
+      td.style.cssText = 'padding:5px 8px; border-bottom:1px solid #eef1f6;';
+      row.appendChild(td);
+    }
+    var actionsCell = document.createElement('td');
+    actionsCell.style.cssText = 'padding:5px 8px; border-bottom:1px solid #eef1f6; white-space:nowrap;';
+    actionsCell.appendChild(makeActionBtn('Select', false, scanId, selectScan));
+    actionsCell.appendChild(makeActionBtn('Rename', false, scanId, promptRenameScan));
+    actionsCell.appendChild(makeActionBtn('Rerun', false, scanId, rerunScan));
+    actionsCell.appendChild(makeActionBtn('Delete', true, scanId, deleteScan));
+    row.appendChild(actionsCell);
+    return row;
+  }
+
+  function renderScans(scans) {
+    if (!tbody) return;
+    tbody.innerHTML = '';
+    if (!scans || !scans.length) {
+      if (empty) empty.style.display = '';
+      return;
+    }
+    if (empty) empty.style.display = 'none';
+    for (var i = 0; i < scans.length; i++) {
+      tbody.appendChild(buildRow(scans[i]));
+    }
+  }
+
+  function loadScans() {
+    request('/api/scans').then(function (r) {
+      if (statusEl) statusEl.textContent = '';
+      renderScans(r && r.scans);
+    }).catch(function (err) {
+      if (statusEl) statusEl.textContent = String(err && err.message || err);
+    });
+  }
+
+  function selectScan(scanId) {
+    if (!scanId) return;
+    request('/api/scans/select', { method: 'POST', body: JSON.stringify({ scan_id: scanId }) })
+      .then(function () {
+        setStatus('Loaded saved scan: ' + scanId.slice(0, 12) + '…');
+        loadResults();
+        loadScans();
+      })
+      .catch(function (err) {
+        setStatus(String(err && err.message || err), true);
+      });
+  }
+
+  function promptRenameScan(scanId) {
+    var current = null;
+    var rows = tbody ? tbody.querySelectorAll('tr') : [];
+    for (var i = 0; i < rows.length; i++) {
+      if (rows[i].getAttribute('data-scan-id') === scanId) {
+        current = rows[i].getAttribute('data-scan-name');
+        break;
+      }
+    }
+    var name = window.prompt('Rename scan', current || '');
+    if (name && name.trim()) renameScan(scanId, name.trim());
+  }
+
+  function renameScan(scanId, name) {
+    request('/api/scans/rename', { method: 'POST', body: JSON.stringify({ scan_id: scanId, name: name }) })
+      .then(function () {
+        if (statusEl) statusEl.textContent = 'Renamed scan.';
+        loadScans();
+      })
+      .catch(function (err) {
+        if (statusEl) statusEl.textContent = String(err && err.message || err);
+      });
+  }
+
+  function deleteScan(scanId) {
+    if (!confirm('Delete this saved scan and all its results?')) return;
+    request('/api/scans/delete', { method: 'POST', body: JSON.stringify({ scan_id: scanId }) })
+      .then(function () {
+        if (statusEl) statusEl.textContent = 'Deleted saved scan.';
+        loadScans();
+      })
+      .catch(function (err) {
+        if (statusEl) statusEl.textContent = String(err && err.message || err);
+      });
+  }
+
+  function rerunScan(scanId) {
+    request('/api/scans/rerun', { method: 'POST', body: JSON.stringify({ scan_id: scanId }) })
+      .then(function () {
+        if (statusEl) statusEl.textContent = 'Rerunning saved scan…';
+      })
+      .catch(function (err) {
+        if (statusEl) statusEl.textContent = String(err && err.message || err);
+      });
+  }
+
+  if (refreshBtn) refreshBtn.addEventListener('click', loadScans);
+  window.__loadScans = loadScans;
+
+  // The page router calls window.__loadScans() when the Reports page is opened.
+})();
+</script>
+
+<script>
+(function () {
+  function el(id) { return document.getElementById(id); }
+  function txt(id, value) {
+    var n = el(id);
+    if (n) n.textContent = value == null || value === "" ? "\u2014" : String(value);
+  }
+  function setNode(id, node) { var n = el(id); if (n) n.replaceChildren(node); }
+  function status(text, error) {
+    var n = el("profile-status");
+    if (!n) return;
+    n.classList.toggle("error", !!error);
+    var pre = document.createElement("pre");
+    pre.textContent = text == null ? "" : String(text);
+    n.replaceChildren(pre);
+  }
+  function money(price, currency, unit) {
+    if (price == null) return "\u2014";
+    return (currency ? currency + " " : "") + price + (unit ? " / " + unit : "");
+  }
+  function kv(pairs) {
+    var dl = document.createElement("dl");
+    dl.className = "profile-kv";
+    pairs.forEach(function (pair) {
+      var dt = document.createElement("dt");
+      dt.textContent = pair[0];
+      var dd = document.createElement("dd");
+      var v = pair[1];
+      dd.textContent = v == null || v === "" ? "\u2014" : String(v);
+      dl.append(dt, dd);
+    });
+    return dl;
+  }
+  function table(headers, rows) {
+    var t = document.createElement("table");
+    var thead = document.createElement("thead");
+    var htr = document.createElement("tr");
+    headers.forEach(function (h) { var th = document.createElement("th"); th.textContent = h; htr.append(th); });
+    thead.append(htr);
+    t.append(thead);
+    var tb = document.createElement("tbody");
+    rows.forEach(function (r) {
+      var tr = document.createElement("tr");
+      r.forEach(function (c) {
+        var td = document.createElement("td");
+        td.textContent = c == null || c === "" ? "\u2014" : String(c);
+        tr.append(td);
+      });
+      tb.append(tr);
+    });
+    t.append(tb);
+    return t;
+  }
+  function bullet(items, emptyText) {
+    if (!items || !items.length) return document.createTextNode(emptyText);
+    var ul = document.createElement("ul");
+    items.forEach(function (it) { var li = document.createElement("li"); li.textContent = it; ul.append(li); });
+    return ul;
+  }
+  function short(text, n) {
+    var s = (text == null ? "" : String(text)).replace(/\s+/g, " ").trim();
+    return s.length > n ? s.slice(0, n - 1) + "\u2026" : s;
+  }
+
+  // ============================ router ============================
+  var loaded = {};
+
+  function subPages(name) {
+    return name === "products" || name === "image" || name === "product";
+  }
+
+  function setActive(name) {
+    var links = document.querySelectorAll(".side-nav .nav-link[data-page], .top-nav .nav-link[data-page]");
+    for (var i = 0; i < links.length; i++) {
+      var p = links[i].getAttribute("data-page");
+      links[i].classList.toggle("active", p === name || (p === "research" && subPages(name)));
+    }
+    var sub = el("nav-sub-research");
+    if (sub) sub.hidden = !subPages(name);
+    var group = document.querySelector('.side-nav .nav-group[data-group="research"]');
+    if (group) group.classList.toggle("active", subPages(name));
+  }
+
+  function onPageShown(name) {
+    if (name === "products" && !loaded.products) {
+      loaded.products = true;
+      loadMetaSummary();
+      loadIdentSummary();
+    }
+    if (name === "reports" && !loaded.reports) {
+      loaded.reports = true;
+      if (window.__loadScans) window.__loadScans();
+    }
+    if (name === "image" && !loaded.image) {
+      loaded.image = true;
+      loadChats();
+    }
+  }
+
+  function showPage(name) {
+    var pages = document.querySelectorAll(".app-page");
+    for (var i = 0; i < pages.length; i++) {
+      pages[i].hidden = pages[i].getAttribute("data-page") !== name;
+    }
+    setActive(name);
+    window.scrollTo(0, 0);
+    onPageShown(name);
+  }
+  window.__showPage = showPage;
+
+  function wireNav() {
+    var links = document.querySelectorAll(".side-nav .nav-link[data-page], .top-nav .nav-link[data-page]");
+    for (var i = 0; i < links.length; i++) {
+      links[i].addEventListener("click", function (event) {
+        event.preventDefault();
+        var page = this.getAttribute("data-page");
+        showPage(page === "research" ? "products" : page);
+      });
+    }
+    var group = document.querySelector('.side-nav .nav-group[data-group="research"]');
+    if (group) {
+      group.addEventListener("click", function () {
+        var sub = el("nav-sub-research");
+        if (sub) sub.hidden = false;
+        showPage("products");
+      });
+    }
+  }
+
+  // ============================ product profile ============================
+  var currentKey = null;
+  var currentProduct = null;
+
+  function productIndex() {
+    window.__productIndex = window.__productIndex || {};
+    return window.__productIndex;
+  }
+
+  function renderSpecs(p, details) {
+    var rows = [];
+    var attrs = p && p.attributes ? p.attributes : {};
+    Object.keys(attrs).forEach(function (k) {
+      rows.push([k.replaceAll("_", " "), (attrs[k] || []).join(", ")]);
+    });
+    if (details && typeof details === "object") {
+      Object.keys(details).forEach(function (k) {
+        var v = details[k];
+        if (v == null || v === "") return;
+        rows.push([String(k).replaceAll("_", " "), Array.isArray(v) ? v.join(", ") : (typeof v === "object" ? JSON.stringify(v) : v)]);
+      });
+    }
+    var box = el("profile-specs");
+    if (!box) return;
+    if (!rows.length) { box.textContent = "No specifications recorded yet."; return; }
+    box.replaceChildren(kv(rows));
+  }
+
+  function renderIdent(p) {
+    var box = el("profile-ident");
+    if (!box) return;
+    box.replaceChildren(kv([
+      ["Method", p.identification_method],
+      ["Confidence", p.identification_confidence],
+      ["Identified from photo", p.identified_from_photo ? "yes" : "no"],
+      ["Previous key", p.previous_product_key]
+    ]));
+    var input = el("profile-name-input");
+    if (input && !input.value) input.value = p.product || p.key || "";
+  }
+
+  function renderMeta(p) {
+    var box = el("profile-meta");
+    if (!box) return;
+    var box2 = document.createDocumentFragment();
+    var lookup = p.meta_ads_lookup;
+    if (lookup) {
+      box2.append(kv([
+        ["Lookup status", lookup.status],
+        ["Ads found", lookup.ad_count],
+        ["Error", lookup.error_text],
+        ["Fetched", lookup.fetched_at]
+      ]));
+    }
+    var ads = p.active_meta_ads || [];
+    if (ads.length) {
+      box2.append(table(
+        ["Page", "Ad ID", "Active", "Started", "Platforms", "Creative"],
+        ads.slice(0, 25).map(function (ad) {
+          return [ad.page_name, ad.ad_id, ad.is_active ? "yes" : "no",
+                  (ad.delivery_start || "").slice(0, 10), ad.platforms, short(ad.creative_text, 90)];
+        })
+      ));
+      if (ads.length > 25) {
+        var more = document.createElement("p");
+        more.textContent = "Showing 25 of " + ads.length + " ads.";
+        box2.append(more);
+      }
+    } else if (!lookup) {
+      box2.append(document.createTextNode("No Meta ad lookup recorded for this product."));
+    }
+    box.replaceChildren(box2);
+  }
+
+  function renderHistory(history) {
+    var box = el("profile-history");
+    if (!box) return;
+    if (!history || !history.length) { box.textContent = "No history recorded yet."; return; }
+    box.replaceChildren(table(
+      ["Date", "Posts", "Views", "Reactions", "Comments", "Forwards"],
+      history.map(function (h) {
+        return [h.date, h.posts, h.views, h.reactions, h.comments, h.forwards];
+      })
+    ));
+  }
+
+  function renderAlerts(alerts) {
+    var box = el("profile-alerts");
+    if (!box) return;
+    if (!alerts || !alerts.length) { box.textContent = "No alerts for this product."; return; }
+    box.replaceChildren(table(
+      ["Kind", "Message", "Created"],
+      alerts.map(function (a) {
+        return [a.kind || a.alert_type, a.message || a.detail, a.created_at || a.date];
+      })
+    ));
+  }
+
+  function renderCompetitors(listings) {
+    var box = el("profile-competitors");
+    if (!box) return;
+    if (!listings || !listings.length) { box.textContent = "No competitor listings yet. Use the button below."; return; }
+    box.replaceChildren(table(
+      ["Title", "Price", "Status", "URL"],
+      listings.map(function (l) {
+        return [l.title, l.price == null ? "" : money(l.price, l.currency, l.unit), l.status, l.url];
+      })
+    ));
+  }
+
+  function renderOffers(offers) {
+    var box = el("profile-images");
+    if (!box) return;
+    if (!offers || !offers.length) { box.textContent = "No offers recorded."; return; }
+    var frag = document.createDocumentFragment();
+    var withImage = offers.filter(function (o) { return o.image; });
+    if (withImage.length) {
+      var strip = document.createElement("div");
+      strip.style.cssText = "display:flex;gap:8px;flex-wrap:wrap;margin-bottom:8px;";
+      withImage.slice(0, 6).forEach(function (o) {
+        var img = document.createElement("img");
+        img.src = o.image;
+        img.alt = o.supplier || "Telegram photo";
+        img.style.cssText = "width:88px;height:88px;object-fit:cover;border-radius:6px;border:1px solid #e1e6ef;";
+        strip.append(img);
+      });
+      frag.append(strip);
+    }
+    frag.append(table(
+      ["Supplier", "Price", "MOQ", "Size", "Views", "Post"],
+      offers.map(function (o) {
+        return [o.supplier, money(o.price, o.currency, o.price_unit), o.moq, o.size, o.views, o.telegram_url ? "open" : ""];
+      })
+    ));
+    box.replaceChildren(frag);
+  }
+
+  function renderResearch(p) {
+    var box = el("profile-research");
+    var editBtn = el("profile-research-edit");
+    var saveBtn = el("profile-research-save");
+    if (!box) return;
+    var ev = p.market_research || {};
+    if (!ev || !Object.keys(ev).length) {
+      box.textContent = "No market research recorded yet.";
+      if (editBtn) editBtn.hidden = false;
+      if (saveBtn) saveBtn.hidden = true;
+      return;
+    }
+    box.replaceChildren(kv([
+      ["Google Trends interest", ev.trend_direction || "unknown"],
+      ["Active Meta ads found", ev.active_ads != null ? ev.active_ads : "not entered"],
+      ["Oldest active ad age (days)", ev.oldest_ad_days != null ? ev.oldest_ad_days : "not entered"],
+      ["Social post views (observed)", ev.social_views != null ? ev.social_views : "not entered"],
+      ["Social interactions (observed)", ev.social_interactions != null ? ev.social_interactions : "not entered"],
+      ["Social post URL", ev.social_source_url || "—"],
+      ["Notes / ad evidence", ev.notes || "—"]
+    ]));
+    if (editBtn) editBtn.hidden = false;
+    if (saveBtn) saveBtn.hidden = true;
+  }
+
+  function startResearchEdit() {
+    if (!currentKey) { status("Open a product first.", true); return; }
+    var box = el("profile-research");
+    var editBtn = el("profile-research-edit");
+    var saveBtn = el("profile-research-save");
+    if (!box) return;
+    var ev = currentProduct && (currentProduct.market_research || {});
+    box.replaceChildren(
+      field("Google Trends interest", "select", ev.trend_direction || "unknown", { options: ["unknown", "rising", "stable", "falling"] }),
+      field("Active Meta ads found (enter 0 if none)", "number", ev.active_ads, { min: "0", step: "1" }),
+      field("Age in days of oldest active ad", "number", ev.oldest_ad_days, { min: "0", step: "1" }),
+      field("Social post views (observed)", "number", ev.social_views, { min: "0", step: "1" }),
+      field("Social likes/comments/shares (observed)", "number", ev.social_interactions, { min: "0", step: "1" }),
+      field("Social post URL (optional)", "url", ev.social_source_url),
+      field("Research notes / ad evidence", "textarea", ev.notes)
+    );
+    if (editBtn) editBtn.hidden = true;
+    if (saveBtn) saveBtn.hidden = false;
+  }
+
+  function saveResearch() {
+    if (!currentKey) { status("Open a product first.", true); return; }
+    var trend = el("research-trend-direction");
+    var ads = el("research-active-ads");
+    var age = el("research-oldest-ad-days");
+    var views = el("research-social-views");
+    var interactions = el("research-social-interactions");
+    var source = el("research-social-source-url");
+    var notes = el("research-notes");
+    if (!trend || !ads || !age || !views || !interactions || !source || !notes) {
+      status("Research form not loaded.", true);
+      return;
+    }
+    status("Saving research\u2026");
+    request("/api/research/save", {
+      method: "POST",
+      body: JSON.stringify({
+        product_key: currentKey,
+        trend_direction: trend.value,
+        active_ads: ads.value,
+        oldest_ad_days: age.value,
+        social_views: views.value,
+        social_interactions: interactions.value,
+        social_source_url: source.value,
+        notes: notes.value
+      })
+    }).then(function () {
+      status("Research notes saved; the test-priority estimate has been updated.");
+      refreshProfile();
+    }).catch(function (err) { status((err && err.message) || err, true); });
+  }
+
+  function renderProfile(p) {
+    if (!p) return;
+    txt("profile-name", p.product || p.key || "Unnamed product");
+    txt("profile-key", "Key: " + (p.key || "") + (p.candidate_only ? " \u00b7 unverified title from the offer post" : ""));
+    txt("pm-score", p.candidate_only ? "Review" : (p.score != null ? p.score + "/100" : null));
+    txt("pm-score-foot", p.research_coverage ? p.research_coverage + " research source type(s)" : "Telegram-only score");
+    txt("pm-posts", p.posts);
+    txt("pm-posts-foot", [p.total_reactions != null ? p.total_reactions + " reactions" : "",
+                          p.total_comments != null ? p.total_comments + " comments" : ""].filter(Boolean).join(" \u00b7 "));
+    txt("pm-sellers", p.sellers);
+    txt("pm-views", p.max_views);
+    txt("pm-views-foot", p.total_forwards != null ? p.total_forwards + " forwards" : "");
+    txt("pm-price", money(p.lowest_price, p.price_currency, p.price_unit));
+    txt("pm-ads", (p.active_meta_ads || []).length);
+    txt("pm-ads-foot", p.meta_ads_lookup ? "lookup: " + (p.meta_ads_lookup.status || "") : "");
+    renderSpecs(p, p.details);
+    renderIdent(p);
+    renderMeta(p);
+    renderResearch(p);
+    renderHistory(p.history);
+    renderAlerts(p.alerts);
+    renderCompetitors(p.competitor_listings);
+    renderOffers(p.offers);
+    status("Profile loaded for \u201c" + (p.product || p.key) + "\u201d.");
+  }
+
+  function openProductProfile(key) {
+    if (!key) return;
+    currentKey = key;
+    currentProduct = productIndex()[key] || null;
+    showPage("product");
+    if (currentProduct) renderProfile(currentProduct);
+    else status("Loading product " + key + "\u2026");
+    refreshProfile();
+  }
+  window.__openProductProfile = openProductProfile;
+
+  function refreshProfile() {
+    if (!currentKey) return;
+    status("Loading profile\u2026");
+    request("/api/product?key=" + encodeURIComponent(currentKey))
+      .then(function (r) {
+        var p = r && r.product;
+        if (p) {
+          currentProduct = p;
+          productIndex()[currentKey] = p;
+        }
+        if (p) renderProfile(p);
+        else status("No product found for this key.", true);
+      })
+      .catch(function (err) { status((err && err.message) || err, true); });
+  }
+
+  function profilePost(path, label) {
+    if (!currentKey) { status("Open a product first.", true); return; }
+    status(label + "\u2026");
+    request(path, { method: "POST", body: JSON.stringify({ product_key: currentKey }) })
+      .then(function (r) { status(label + " done.\n" + JSON.stringify(r, null, 2)); refreshProfile(); })
+      .catch(function (err) { status((err && err.message) || err, true); });
+  }
+
+  function loadSimilarSellers() {
+    if (!currentKey) { status("Open a product first.", true); return; }
+    var box = el("profile-sellers");
+    if (box) box.textContent = "Checking\u2026";
+    request("/api/product/similar-sellers?key=" + encodeURIComponent(currentKey))
+      .then(function (r) {
+        if (!box) return;
+        var frag = document.createDocumentFragment();
+        frag.append(kv([
+          ["Status", r.status],
+          ["Reason", r.reason],
+          ["Identical matches", r.identical],
+          ["Visual matches", r.visual],
+          ["Indexed photos", r.indexed],
+          ["Pending", r.pending],
+          ["Threshold", r.threshold]
+        ]));
+        var matches = r.matches || [];
+        if (matches.length) {
+          frag.append(table(["Match", "Score", "Chat"], matches.slice(0, 20).map(function (m) {
+            return [m.title || m.message_id || m.id, m.score, m.chat_id];
+          })));
+        }
+        box.replaceChildren(frag);
+      })
+      .catch(function (err) { if (box) box.textContent = String((err && err.message) || err); });
+  }
+
+  function loadImageProduct() {
+    if (!currentKey) { status("Open a product first.", true); return; }
+    var box = el("profile-images");
+    if (box) box.textContent = "Loading\u2026";
+    request("/api/image-product?key=" + encodeURIComponent(currentKey))
+      .then(function (r) { renderOffers(r && r.offers); })
+      .catch(function (err) { if (box) box.textContent = String((err && err.message) || err); });
+  }
+
+  function fetchCompetitors() {
+    profilePost("/api/competitor/fetch-from-ads", "Fetching competitor listings");
+  }
+
+  function saveName() {
+    if (!currentKey) { status("Open a product first.", true); return; }
+    var input = el("profile-name-input");
+    var name = input && input.value ? input.value.trim() : "";
+    if (!name) { status("Enter a name for the product.", true); return; }
+    status("Saving name\u2026");
+    request("/api/products/identify", { method: "POST", body: JSON.stringify({ product_key: currentKey, name: name }) })
+      .then(function (r) { status("Name saved.\n" + JSON.stringify(r, null, 2)); refreshProfile(); })
+      .catch(function (err) { status((err && err.message) || err, true); });
+  }
+
+  function identifyFromImage() {
+    if (!currentKey) { status("Open a product first.", true); return; }
+    status("Identifying from the product photo\u2026");
+    request("/api/products/identify-from-image", { method: "POST", body: JSON.stringify({ product_key: currentKey, save: false }) })
+      .then(function (r) { status("Identification result:\n" + JSON.stringify(r, null, 2)); refreshProfile(); })
+      .catch(function (err) { status((err && err.message) || err, true); });
+  }
+
+  function researchWeb() {
+    profilePost("/api/products/research-web", "Researching on the web");
+  }
+
+  // ============================ image search ============================
+  function renderChats(chats) {
+    var list = el("mp-chat-list");
+    if (!list) return;
+    list.replaceChildren();
+    if (!chats || !chats.length) {
+      list.textContent = 'No Telegram channels loaded. Use "Refresh Telegram" in the header first.';
+      return;
+    }
+    chats.forEach(function (chat) {
+      var label = document.createElement("label");
+      var cb = document.createElement("input");
+      cb.type = "checkbox";
+      cb.className = "mp-chat-cb";
+      cb.value = String(chat.id);
+      var span = document.createElement("span");
+      span.textContent = (chat.title || String(chat.id)) + " (" + (chat.kind || "chat") + ")";
+      label.append(cb, span);
+      list.append(label);
+    });
+  }
+
+  function loadChats() {
+    var list = el("mp-chat-list");
+    if (list) list.textContent = "Loading Telegram channels\u2026";
+    request("/api/chats")
+      .then(function (r) { renderChats(r && r.chats); })
+      .catch(function (err) { if (list) list.textContent = String((err && err.message) || err); });
+  }
+
+  function selectedChatIds() {
+    var boxes = document.querySelectorAll(".mp-chat-cb");
+    var ids = [];
+    for (var i = 0; i < boxes.length; i++) if (boxes[i].checked) ids.push(boxes[i].value);
+    return ids;
+  }
+
+  function mpOut(id, text, error) {
+    var box = el(id);
+    if (!box) return;
+    box.classList.toggle("error", !!error);
+    var pre = document.createElement("pre");
+    pre.textContent = text == null ? "" : String(text);
+    box.replaceChildren(pre);
+    if (window.__notify && text) window.__notify(String(text), error ? "error" : "info");
+  }
+
+  function imageSearch() {
+    var fileInput = el("mp-image-file");
+    var file = fileInput && fileInput.files && fileInput.files[0];
+    if (!file) { mpOut("mp-image-out", "Choose an image file first.", true); return; }
+    var ids = selectedChatIds();
+    if (!ids.length) { mpOut("mp-image-out", "Select at least one channel or group to search.", true); return; }
+    var body = new FormData();
+    body.append("image", file);
+    body.append("chat_ids", ids.join(","));
+    mpOut("mp-image-out", "Uploading image and searching " + ids.length + " channel(s)\u2026");
+    fetch("/api/image-search", { method: "POST", body: body })
+      .then(function (res) {
+        return res.json().then(function (payload) {
+          if (!res.ok) throw new Error(payload.error || res.statusText);
+          return payload;
+        });
+      })
+      .then(function (r) { mpOut("mp-image-out", JSON.stringify(r, null, 2)); })
+      .catch(function (err) { mpOut("mp-image-out", (err && err.message) || err, true); });
+  }
+
+  // ============================ reports ============================
+  function loadMetaSummary() {
+    mpOut("mp-meta-out", "Loading Meta ad summary\u2026");
+    request("/api/meta-ads/summary")
+      .then(function (r) { mpOut("mp-meta-out", JSON.stringify(r, null, 2)); })
+      .catch(function (err) { mpOut("mp-meta-out", (err && err.message) || err, true); });
+  }
+
+  function resumeMeta() {
+    mpOut("mp-meta-out", "Resuming Meta ad lookup\u2026");
+    request("/api/meta-ads/resume", { method: "POST", body: JSON.stringify({}) })
+      .then(function (r) { mpOut("mp-meta-out", JSON.stringify(r, null, 2)); })
+      .catch(function (err) { mpOut("mp-meta-out", (err && err.message) || err, true); });
+  }
+
+  function loadIdentSummary() {
+    mpOut("mp-ident-summary-out", "Loading identification summary\u2026");
+    request("/api/identification/summary")
+      .then(function (r) { mpOut("mp-ident-summary-out", JSON.stringify(r, null, 2)); })
+      .catch(function (err) { mpOut("mp-ident-summary-out", (err && err.message) || err, true); });
+  }
+
+  function cancelOperation() {
+    mpOut("mp-export-out", "Requesting cancellation\u2026");
+    request("/api/operations/cancel", { method: "POST", body: JSON.stringify({}) })
+      .then(function (r) { mpOut("mp-export-out", JSON.stringify(r, null, 2)); })
+      .catch(function (err) { mpOut("mp-export-out", (err && err.message) || err, true); });
+  }
+
+  // ============================ wiring ============================
+  function on(id, handler) {
+    var node = el(id);
+    if (node) node.addEventListener("click", handler);
+  }
+
+  wireNav();
+
+  var showScanBtn = el("show-scan");
+  var showScanSecondaryBtn = el("show-scan-secondary");
+  function openScanPage() {
+    showPage("products");
+    var scanDetails = el("scan-controls");
+    if (scanDetails) scanDetails.open = true;
+  }
+  if (showScanBtn) showScanBtn.addEventListener("click", openScanPage);
+  if (showScanSecondaryBtn) showScanSecondaryBtn.addEventListener("click", openScanPage);
+
+  on("profile-back", function () { showPage("products"); });
+  on("profile-refresh", refreshProfile);
+  on("profile-load-sellers", loadSimilarSellers);
+  on("profile-load-images", loadImageProduct);
+  on("profile-load-competitors", fetchCompetitors);
+  on("profile-save-name", saveName);
+  on("profile-ident-image", identifyFromImage);
+  on("profile-research-web", researchWeb);
+  on("profile-research-edit", startResearchEdit);
+  on("profile-research-save", saveResearch);
+
+  on("mp-image-refresh-chats", loadChats);
+  on("mp-image-search", imageSearch);
+  on("mp-image-resume", function () {
+    mpOut("mp-image-out", "Resuming image indexing\u2026");
+    request("/api/image-search/resume", { method: "POST", body: JSON.stringify({}) })
+      .then(function (r) { mpOut("mp-image-out", JSON.stringify(r, null, 2)); })
+      .catch(function (err) { mpOut("mp-image-out", (err && err.message) || err, true); });
+  });
+  on("mp-image-status", function () {
+    mpOut("mp-image-out", "Checking image-search status\u2026");
+    request("/api/image-search/status")
+      .then(function (r) { mpOut("mp-image-out", JSON.stringify(r, null, 2)); })
+      .catch(function (err) { mpOut("mp-image-out", (err && err.message) || err, true); });
+  });
+
+  on("mp-meta-reload", loadMetaSummary);
+  on("mp-meta-resume", resumeMeta);
+  on("mp-ident-summary-reload", loadIdentSummary);
+  on("mp-export-csv", function () { window.location.href = "/api/export.csv"; });
+  on("mp-cancel-op", cancelOperation);
+
+  // ===== notifications (right-hand side) =====
+  var toastStack = el("toast-stack");
+  var TOAST_GLYPH = { ok: "\u2713", info: "\u2139", warn: "!", error: "\u2715" };
+  function notify(message, type, title) {
+    if (!message || !toastStack) return;
+    var kind = (type === "ok" || type === "warn" || type === "error") ? type : "info";
+    var box = document.createElement("div");
+    box.className = "toast " + kind;
+    var icon = document.createElement("span");
+    icon.className = "toast-icon";
+    icon.textContent = TOAST_GLYPH[kind];
+    var content = document.createElement("div");
+    content.className = "toast-content";
+    var head = document.createElement("div");
+    head.className = "toast-title";
+    head.textContent = title || { ok: "Done", info: "Status", warn: "Warning", error: "Something went wrong" }[kind];
+    var body = document.createElement("div");
+    body.className = "toast-msg";
+    body.textContent = String(message);
+    content.append(head, body);
+    var close = document.createElement("button");
+    close.type = "button";
+    close.className = "toast-close";
+    close.setAttribute("aria-label", "Dismiss notification");
+    close.textContent = "\u00d7";
+    function dismiss() {
+      if (!box.parentNode) return;
+      box.classList.add("hide");
+      setTimeout(function () { box.remove(); }, 220);
+    }
+    close.addEventListener("click", dismiss);
+    box.append(icon, content, close);
+    toastStack.append(box);
+    while (toastStack.childElementCount > 5) toastStack.firstElementChild.remove();
+    var timer = setTimeout(dismiss, kind === "error" ? 11000 : 6500);
+    box.addEventListener("mouseenter", function () { clearTimeout(timer); });
+    box.addEventListener("mouseleave", function () { timer = setTimeout(dismiss, 2600); });
+  }
+  window.__notify = notify;
+
+  // ===== connection dialog (modal) =====
+  var connModal = el("conn-modal");
+  var connModalTitle = el("conn-modal-title");
+  function openConnModal(which) {
+    if (!connModal) return;
+    if (connModalTitle) connModalTitle.textContent = which === "meta" ? "Meta Ad Library" : "Connect Telegram";
+    connModal.classList.remove("hidden");
+    document.body.classList.add("modal-open");
+  }
+  function closeConnModal() {
+    if (!connModal) return;
+    connModal.classList.add("hidden");
+    document.body.classList.remove("modal-open");
+  }
+  window.__openConnModal = openConnModal;
+  window.__closeConnModal = closeConnModal;
+
+  function hideBothPanels() {
+    var tg = el("telegram-connect-panel"), mp = el("meta-panel");
+    if (tg) tg.classList.add("hidden");
+    if (mp) mp.classList.add("hidden");
+  }
+
+  function showPanel(which) {
+    var tg = el("telegram-connect-panel"), mp = el("meta-panel");
+    if (which === "meta") {
+      if (tg) tg.classList.add("hidden");
+      if (mp) mp.classList.remove("hidden");
+    } else {
+      if (mp) mp.classList.add("hidden");
+      if (tg) tg.classList.remove("hidden");
+    }
+    openConnModal(which);
+  }
+
+  if (connModal) {
+    var connClose = el("conn-modal-close");
+    if (connClose) connClose.addEventListener("click", function () {
+      hideBothPanels();
+      closeConnModal();
+      if (window.__refreshConnectionStatus) window.__refreshConnectionStatus();
+    });
+    connModal.addEventListener("mousedown", function (event) {
+      if (event.target === connModal) {
+        hideBothPanels();
+        closeConnModal();
+      }
+    });
+    document.addEventListener("keydown", function (event) {
+      if (event.key === "Escape" && !connModal.classList.contains("hidden")) {
+        hideBothPanels();
+        closeConnModal();
+      }
+    });
+  }
+
+  on("settings-connect-telegram", function () { showPanel("telegram"); });
+  on("settings-test-meta", function () {
+    showPanel("meta");
+    if (window.__refreshConnectionStatus) window.__refreshConnectionStatus();
+  });
+
+  // expose for other script blocks
+  window.__loadChats = loadChats;
+  window.__loadMetaSummary = loadMetaSummary;
+  window.__loadIdentSummary = loadIdentSummary;
+})();
+</script>
+
+
+</body>
+
+</html>

@@ -1,0 +1,976 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Wholesale Product Research</title>
+  <style>
+    :root {
+      color-scheme: light;
+      font-family: "Segoe UI", Arial, sans-serif;
+      color: #243247;
+      background: #f3f6fa;
+      --teal: #078c9c;
+      --blue: #397fbd;
+      --line: #dfe6ef;
+      --muted: #748196;
+    }
+    * { box-sizing: border-box; }
+    body { margin: 0; min-width: 360px; }
+    [hidden] { display: none !important; }
+    button, input, select, textarea { font: inherit; }
+    button { border: 1px solid transparent; border-radius: 6px; padding: 9px 13px; color: white; background: var(--teal); font-weight: 650; cursor: pointer; }
+    button.secondary { border-color: var(--line); color: #3f526b; background: #fff; }
+    button:disabled { opacity: .55; cursor: wait; }
+    a { color: #167d9b; text-decoration: none; }
+    a:hover { text-decoration: underline; }
+    h1, h2, h3, p { margin-top: 0; }
+    h1 { margin-bottom: 5px; color: #202b3b; font-size: 27px; }
+    h2 { margin-bottom: 6px; font-size: 18px; }
+    h3 { margin: 0; font-size: 15px; }
+    .app-shell { min-height: 100vh; display: grid; grid-template-columns: 250px minmax(0, 1fr); }
+    .sidebar { position: sticky; top: 0; height: 100vh; display: flex; flex-direction: column; padding: 23px 15px 16px; border-right: 1px solid var(--line); background: #fff; }
+    .brand { display: flex; align-items: center; gap: 11px; margin: 0 9px 34px; color: #23364c; font-size: 20px; font-weight: 750; }
+    .brand-mark { width: 38px; height: 38px; display: grid; place-items: center; border-radius: 10px; color: #fff; background: var(--teal); font-size: 21px; }
+    .sidebar-label { margin: 0 10px 9px; color: #8b96a6; font-size: 11px; font-weight: 750; letter-spacing: .09em; }
+    .side-nav { display: grid; gap: 5px; }
+    .side-nav a { display: flex; align-items: center; gap: 11px; padding: 11px 12px; border-radius: 7px; color: #5d6b7e; font-size: 14px; }
+    .side-nav a:hover, .side-nav a.active { color: #087e90; background: #e8f5f7; text-decoration: none; }
+    .side-nav .nav-icon { width: 20px; text-align: center; font-size: 17px; }
+    .sidebar-spacer { flex: 1; }
+    .local-note { padding: 12px; border: 1px solid #e6edf3; border-radius: 8px; color: #66758a; background: #f8fafc; font-size: 12px; line-height: 1.5; }
+    .workspace { min-width: 0; }
+    .topbar { min-height: 57px; display: flex; align-items: center; justify-content: space-between; gap: 15px; padding: 0 25px; border-bottom: 1px solid var(--line); background: #fff; }
+    .top-nav { display: flex; align-items: center; gap: 26px; height: 57px; }
+    .top-nav a { height: 100%; display: flex; align-items: center; border-bottom: 2px solid transparent; color: #657286; font-size: 14px; }
+    .top-nav a.active { border-color: var(--teal); color: #087e90; font-weight: 650; }
+    .top-actions { display: flex; align-items: center; gap: 10px; color: #6d7b8f; font-size: 13px; }
+    .status-dot { width: 8px; height: 8px; display: inline-block; border-radius: 50%; background: #35ae72; }
+    main { max-width: 1800px; margin: 0 auto; padding: 24px 25px 48px; }
+    .page-heading { display: flex; align-items: end; justify-content: space-between; gap: 16px; margin-bottom: 19px; }
+    .eyebrow { margin-bottom: 5px; color: var(--teal); font-size: 11px; font-weight: 750; letter-spacing: .1em; }
+    .muted { color: var(--muted); }
+    .page-heading p, .panel-intro { margin-bottom: 0; color: var(--muted); font-size: 13px; }
+    .heading-actions { display: flex; gap: 8px; flex-wrap: wrap; }
+    .metric-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 15px; margin-bottom: 16px; }
+    .metric-card { min-height: 132px; padding: 18px; border: 1px solid var(--line); border-top: 4px solid var(--blue); border-radius: 6px; background: #fff; box-shadow: 0 2px 5px #20334b08; }
+    .metric-card:nth-child(2) { border-top-color: #22a7c4; }
+    .metric-card:nth-child(3) { border-top-color: #43a469; }
+    .metric-card:nth-child(4) { border-top-color: #e3a300; }
+    .metric-label { display: flex; justify-content: space-between; gap: 9px; color: #657286; font-size: 13px; font-weight: 600; }
+    .metric-value { margin: 15px 0 3px; color: #29394f; font-size: 30px; font-weight: 700; line-height: 1; }
+    .metric-foot { color: #8994a4; font-size: 12px; }
+    .overview-grid { display: grid; grid-template-columns: minmax(280px, .9fr) minmax(380px, 1.5fr); gap: 15px; margin-bottom: 17px; }
+    .panel { min-width: 0; padding: 17px 19px; border: 1px solid var(--line); border-radius: 6px; background: #fff; box-shadow: 0 2px 5px #20334b08; }
+    .panel-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 15px; }
+    .panel-head p { margin: 3px 0 0; color: var(--muted); font-size: 12px; }
+    #priority-chart { display: grid; gap: 11px; }
+    .chart-row { display: grid; grid-template-columns: minmax(90px, 1fr) minmax(100px, 2fr) 35px; align-items: center; gap: 10px; color: #657286; font-size: 12px; }
+    .chart-track { height: 8px; overflow: hidden; border-radius: 5px; background: #edf1f5; }
+    .chart-fill { height: 100%; border-radius: inherit; background: #20a0ad; }
+    .snapshot-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+    .snapshot-item { min-height: 69px; padding: 12px; border: 1px solid #e9edf3; border-radius: 5px; }
+    .snapshot-item strong { display: block; margin-bottom: 4px; color: #33435a; font-size: 17px; }
+    .snapshot-item span { color: var(--muted); font-size: 12px; }
+    .scan-panel { margin-bottom: 17px; padding: 0; }
+    .scan-panel > summary { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 16px 19px; cursor: pointer; list-style: none; }
+    .scan-panel > summary::-webkit-details-marker { display: none; }
+    .scan-panel > summary:after { content: "+"; color: var(--teal); font-size: 22px; }
+    .scan-panel[open] > summary:after { content: "−"; }
+    .scan-panel-body { padding: 0 19px 18px; border-top: 1px solid #edf0f4; }
+    .scan-layout { display: grid; grid-template-columns: minmax(280px, .8fr) minmax(360px, 1.2fr); gap: 22px; padding-top: 17px; }
+    .scan-layout label, .research-box label { display: grid; gap: 5px; color: #536176; font-size: 12px; font-weight: 650; }
+    .scan-layout input, .scan-layout select, .research-box input, .research-box select, .research-box textarea, .toolbar input, .toolbar select { min-width: 0; border: 1px solid #cfd8e3; border-radius: 5px; padding: 8px; color: #344257; background: #fff; }
+    .row { display: flex; align-items: end; flex-wrap: wrap; gap: 10px; }
+    .chat-tools { display: flex; flex-wrap: wrap; gap: 7px; margin: 10px 0; }
+    #chats { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 6px; max-height: 210px; overflow: auto; padding: 2px; }
+    .chat-option { display: flex; align-items: center; gap: 8px; padding: 8px; border: 1px solid #e4eaf1; border-radius: 5px; color: #59697e; font-size: 12px; font-weight: 400; }
+    .chat-option input { margin: 0; }
+    .selection-summary { margin: 8px 0; color: #6a788b; font-size: 12px; }
+    #status { margin-top: 12px; padding: 10px 12px; border-radius: 5px; color: #456076; background: #eff6fa; font-size: 13px; }
+    #status.error { color: #922; background: #fff0f0; white-space: pre-wrap; }
+    .scan-progress { height: 7px; margin-top: 9px; overflow: hidden; border-radius: 5px; background: #e4e9ef; }
+    .scan-progress span { width: 100%; height: 100%; display: block; transform-origin: left; background: #28a36e; transition: transform .3s; }
+    .scan-progress.running span { width: 35%; animation: scan-pulse 1s ease-in-out infinite alternate; }
+    @keyframes scan-pulse { from { transform: translateX(0); } to { transform: translateX(185%); } }
+    .results-panel { padding: 0; overflow: hidden; }
+    .results-heading { display: flex; align-items: end; justify-content: space-between; gap: 14px; padding: 18px 19px 13px; }
+    .results-heading h2 { margin: 0; }
+    #scan-summary { margin-top: 5px; color: var(--muted); font-size: 12px; }
+    .toolbar { min-height: 54px; display: flex; align-items: center; justify-content: space-between; gap: 11px; padding: 9px 14px; border-top: 1px solid #edf0f4; border-bottom: 1px solid var(--line); background: #fafbfd; }
+    .toolbar-left, .toolbar-right { display: flex; align-items: center; gap: 8px; min-width: 0; }
+    .toolbar input { width: min(300px, 28vw); }
+    .toolbar select { max-width: 170px; padding: 8px; }
+    .result-count, .page-status { color: #66758a; font-size: 12px; white-space: nowrap; }
+    .pager { display: flex; align-items: center; gap: 5px; }
+    .pager button { padding: 6px 9px; color: #4e6075; background: #fff; border-color: var(--line); }
+    .table-wrap { width: 100%; overflow: auto; }
+    table { width: 100%; min-width: 1500px; border-collapse: collapse; font-size: 13px; }
+    th, td { max-width: 330px; padding: 11px 10px; border-bottom: 1px solid #e7ebf1; text-align: left; vertical-align: middle; }
+    th { position: sticky; top: 0; z-index: 1; color: #43536a; background: #f1f4f8; font-size: 12px; font-weight: 700; white-space: nowrap; }
+    tbody tr:hover { background: #f8fbfd; }
+    .product-image { width: 58px; height: 52px; border: 1px solid #e7ebf1; border-radius: 4px; object-fit: contain; background: #fff; }
+    .product-cell { min-width: 180px; display: flex; align-items: center; gap: 9px; }
+    .product-cell strong { color: #31445c; }
+    .description-cell { min-width: 200px; max-width: 300px; color: #637186; font-size: 12px; line-height: 1.45; }
+    .price-list { min-width: 170px; max-height: 90px; overflow: auto; }
+    .price-list p { margin: 3px 0; font-size: 12px; }
+    .score { display: inline-block; padding: 5px 9px; border-radius: 14px; color: #176244; background: #e4f5ec; font-weight: 800; white-space: nowrap; }
+    .offer-list { min-width: 190px; }
+    .offer-item { padding: 8px 0; border-bottom: 1px solid #edf0f5; }
+    .offer-item:last-child { border-bottom: 0; }
+    .offer-item p { margin: 5px 0; font-size: 12px; }
+    .offer-item img { max-width: 100px; max-height: 88px; display: block; object-fit: contain; margin-top: 6px; }
+    .research-box { min-width: 280px; max-width: 380px; display: grid; gap: 8px; padding: 9px 0; }
+    .research-box textarea { min-height: 56px; resize: vertical; }
+    .research-links { display: flex; flex-wrap: wrap; gap: 7px 11px; font-size: 12px; }
+    .research-item { min-width: 130px; }
+    .competitor-item { padding: 7px 0; border-bottom: 1px solid #edf0f5; font-size: 12px; }
+    .competitor-item:last-child { border-bottom: 0; }
+    .warning { margin: 0; padding: 10px 14px; border-top: 1px solid #f3e1b0; color: #765817; background: #fff9e9; font-size: 12px; line-height: 1.5; }
+    .empty { padding: 19px; color: #748196; }
+    .small { font-size: 11px; }
+    #login-panel { margin: 10px 0; padding: 12px; border: 1px solid #e1e6ef; border-radius: 6px; background: #f8fafc; }
+    .sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0; }
+    @media (max-width: 1050px) {
+      .app-shell { grid-template-columns: 205px minmax(0, 1fr); }
+      .metric-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+      .top-nav { gap: 13px; }
+      main { padding: 19px 16px 36px; }
+    }
+    @media (max-width: 700px) {
+      .app-shell { display: block; }
+      .sidebar { position: static; width: 100%; height: auto; padding: 10px 13px; border-right: 0; border-bottom: 1px solid var(--line); }
+      .brand { margin: 0 3px 8px; }
+      .sidebar-label, .sidebar-spacer, .local-note { display: none; }
+      .side-nav { display: flex; overflow-x: auto; }
+      .side-nav a { flex: 0 0 auto; padding: 8px 10px; }
+      .topbar { padding: 0 14px; }
+      .top-nav { gap: 11px; }
+      .top-nav a { font-size: 12px; }
+      .top-actions .local-label { display: none; }
+      main { padding: 16px 11px 28px; }
+      .page-heading { align-items: start; flex-direction: column; }
+      .metric-grid { gap: 9px; }
+      .metric-card { min-height: 112px; padding: 13px; }
+      .metric-value { font-size: 25px; }
+      .overview-grid, .scan-layout { grid-template-columns: 1fr; }
+      .toolbar { align-items: stretch; flex-direction: column; }
+      .toolbar-left, .toolbar-right { flex-wrap: wrap; }
+      .toolbar input { width: min(100%, 280px); }
+      .results-heading { align-items: start; flex-direction: column; }
+    }
+  </style>
+</head>
+<body>
+  <div class="app-shell">
+    <aside class="sidebar">
+      <a class="brand" href="#overview">
+        <span class="brand-mark">↗</span>
+        <span>Product Scout</span>
+      </a>
+      <p class="sidebar-label">WORKSPACE</p>
+      <nav class="side-nav" aria-label="Main navigation">
+        <a class="active" href="#overview"><span class="nav-icon">▦</span>Overview</a>
+        <a href="#products-section"><span class="nav-icon">▤</span>Product opportunities</a>
+        <a href="#scan-controls"><span class="nav-icon">⌕</span>Telegram scanner</a>
+        <a href="#research-section"><span class="nav-icon">◉</span>Market intelligence</a>
+      </nav>
+      <div class="sidebar-spacer"></div>
+      <div class="local-note"><span class="status-dot"></span> Local workspace<br>Telegram data stays on this computer.</div>
+    </aside>
+
+    <div class="workspace">
+      <header class="topbar">
+        <nav class="top-nav" aria-label="Workspace sections">
+          <a class="active" href="#overview">Overview</a>
+          <a href="#products-section">Products</a>
+          <a href="#research-section">Research</a>
+        </nav>
+        <div class="top-actions">
+          <span class="status-dot"></span><span class="local-label">Connected to local dashboard</span>
+          <button id="load-chats" class="secondary" type="button">↻ Refresh Telegram</button>
+        </div>
+      </header>
+
+      <main id="overview">
+        <section class="page-heading">
+          <div>
+            <p class="eyebrow">WHOLESALE PRODUCT INTELLIGENCE</p>
+            <h1>Product research dashboard</h1>
+            <p>Find supplier offers, compare prices, and prioritize products worth researching.</p>
+          </div>
+          <div class="heading-actions">
+            <button id="show-scan" type="button">＋ New scan</button>
+          </div>
+        </section>
+
+        <div id="login-panel" hidden class="panel">
+          <h2>Sign in to Telegram</h2>
+          <p class="muted">Enter sign-in details only in this local dashboard. The code and password are not saved by the app.</p>
+          <div id="phone-step" class="row">
+            <label>Telegram phone number, including country code
+              <input id="phone" type="tel" autocomplete="tel" placeholder="+213 ...">
+            </label>
+            <button id="send-code">Send me a Telegram code</button>
+          </div>
+          <div id="code-step" class="row" hidden>
+            <label>Telegram sign-in code
+              <input id="login-code" type="password" inputmode="numeric" autocomplete="one-time-code">
+            </label>
+            <button id="verify-code">Verify code</button>
+          </div>
+          <div id="password-step" class="row" hidden>
+            <label>Telegram two-step verification password
+              <input id="login-password" type="password" autocomplete="current-password">
+            </label>
+            <button id="verify-password">Verify password</button>
+          </div>
+        </div>
+
+        <section class="metric-grid" aria-label="Scan overview">
+          <article class="metric-card">
+            <div class="metric-label"><span>Messages checked</span><span>◷</span></div>
+            <div id="metric-messages" class="metric-value">—</div>
+            <div id="metric-period" class="metric-foot">Run a scan to start collecting signals</div>
+          </article>
+          <article class="metric-card">
+            <div class="metric-label"><span>Offer posts found</span><span>▤</span></div>
+            <div id="metric-offers" class="metric-value">—</div>
+            <div class="metric-foot">Supplier posts with product details or images</div>
+          </article>
+          <article class="metric-card">
+            <div class="metric-label"><span>Suppliers identified</span><span>♙</span></div>
+            <div id="metric-suppliers" class="metric-value">—</div>
+            <div class="metric-foot">Distinct supplier names across these results</div>
+          </article>
+          <article class="metric-card">
+            <div class="metric-label"><span>Research coverage</span><span>◎</span></div>
+            <div id="metric-researched" class="metric-value">—</div>
+            <div class="metric-foot">Products with saved market observations</div>
+          </article>
+        </section>
+
+        <section class="overview-grid">
+          <article class="panel">
+            <div class="panel-head">
+              <div><h2>Highest test priorities</h2><p>Ranked from the current scan</p></div>
+              <a href="#products-section">View table ›</a>
+            </div>
+            <div id="priority-chart" class="muted">Scores appear here after scanning.</div>
+          </article>
+          <article class="panel" id="research-section">
+            <div class="panel-head">
+              <div><h2>Market intelligence</h2><p>Validate demand and competition before testing</p></div>
+            </div>
+            <div class="snapshot-grid">
+              <div class="snapshot-item"><strong>Google Trends</strong><span>Record whether search interest is rising, stable, or falling.</span></div>
+              <div class="snapshot-item"><strong>Meta Ad Library</strong><span>Count visible ads and note how long active ads have run.</span></div>
+              <div class="snapshot-item"><strong>Social signals</strong><span>Record observed views and interactions with a source link.</span></div>
+              <div class="snapshot-item"><strong>Competitor prices</strong><span>Fetch public listing metadata from a product-page URL.</span></div>
+            </div>
+          </article>
+        </section>
+
+        <details class="panel scan-panel" id="scan-controls">
+          <summary>
+            <div><h2>Scan settings</h2><span class="muted">Select dates and Telegram channels before starting a scan</span></div>
+          </summary>
+          <div class="scan-panel-body">
+            <p class="panel-intro">Arabic posts that the English-oriented recognizer cannot name are shown as offers to review. No chats are selected automatically.</p>
+            <div class="scan-layout">
+              <div>
+                <div class="row">
+                  <label>From <input id="start-date" type="date"></label>
+                  <label>Through <input id="end-date" type="date"></label>
+                </div>
+                <label style="margin-top:10px">Market for research links
+                  <select id="market">
+                    <option>Algeria</option>
+                    <option>United States</option>
+                    <option>United Kingdom</option>
+                    <option>European Union</option>
+                  </select>
+                </label>
+                <div class="chat-tools">
+                  <button id="select-all" class="secondary">Select all</button>
+                  <button id="select-none" class="secondary">Select none</button>
+                </div>
+                <div id="selection-summary" class="selection-summary">No chats selected.</div>
+                <div class="chat-tools">
+                  <button id="scan" type="button">Scan selected chats</button>
+                  <button id="cancel-scan" class="secondary" type="button" hidden>Stop scan</button>
+                </div>
+                <div id="status" role="status">Ready. Select a date range and load your chats.</div>
+                <div class="scan-progress" aria-label="Scan progress"><span id="progress-fill"></span></div>
+              </div>
+              <div>
+                <div class="panel-head">
+                  <div><h3>Telegram channels &amp; groups</h3><p>Choose only the chats you want to scan</p></div>
+                </div>
+                <div id="chats" class="muted">Load your Telegram channels and groups to begin.</div>
+              </div>
+            </div>
+          </div>
+        </details>
+
+        <section class="panel results-panel" id="products-section">
+          <div class="results-heading">
+            <div>
+              <p class="eyebrow">OPPORTUNITY PIPELINE</p>
+              <h2>Product opportunities</h2>
+              <div id="scan-summary" class="muted"></div>
+            </div>
+            <button class="secondary" type="button" id="show-scan-secondary">＋ New scan</button>
+          </div>
+          <div class="toolbar">
+            <div class="toolbar-left">
+              <label class="sr-only" for="product-search">Search product table</label>
+              <input id="product-search" type="search" placeholder="⌕  Search products, suppliers...">
+              <label class="sr-only" for="product-filter">Filter products</label>
+              <select id="product-filter">
+                <option value="all">All products</option>
+                <option value="identified">Identified</option>
+                <option value="review">Review offers</option>
+                <option value="researched">Researched</option>
+              </select>
+              <label class="sr-only" for="product-sort">Sort products</label>
+              <select id="product-sort">
+                <option value="priority">Priority</option>
+                <option value="suppliers">Supplier count</option>
+                <option value="newest">Newest post</option>
+                <option value="price">Lowest listed price</option>
+                <option value="title">Product title</option>
+              </select>
+            </div>
+            <div class="toolbar-right">
+              <span id="result-count" class="result-count">0 products</span>
+              <div class="pager">
+                <button id="page-prev" type="button" aria-label="Previous page">‹</button>
+                <span id="page-status" class="page-status">0–0 of 0</span>
+                <button id="page-next" type="button" aria-label="Next page">›</button>
+              </div>
+            </div>
+          </div>
+          <div id="results" class="empty">Run a scan to see product opportunities here.</div>
+          <p class="warning">Google Trends and Meta Ad Library open as public research pages; record only what you actually observe. A test-priority score is a research aid, not proof of sales or profit. Retailers may block price lookup, and wholesale/retail prices are comparable only when currency, unit, shipping, and taxes match.</p>
+        </section>
+      </main>
+    </div>
+  </div>
+  <script>
+    const chatsEl = document.querySelector("#chats");
+    const statusEl = document.querySelector("#status");
+    const resultsEl = document.querySelector("#results");
+    const scanButton = document.querySelector("#scan");
+    const cancelButton = document.querySelector("#cancel-scan");
+    const progressFill = document.querySelector("#progress-fill");
+    const selectedSummary = document.querySelector("#selection-summary");
+    let chats = [];
+    let statusTimer;
+    let chatListInitialized = false;
+
+    function isoDate(date) {
+      return new Date(date.getTime() - date.getTimezoneOffset() * 60000).toISOString().slice(0, 10);
+    }
+    const today = new Date();
+    document.querySelector("#end-date").value = isoDate(today);
+    const monthAgo = new Date(today);
+    monthAgo.setDate(monthAgo.getDate() - 30);
+    document.querySelector("#start-date").value = isoDate(monthAgo);
+
+    async function request(path, options = {}) {
+      const response = await fetch(path, {
+        headers: { "Content-Type": "application/json" },
+        ...options
+      });
+      const body = await response.json();
+      if (!response.ok) throw new Error(body.error || response.statusText);
+      return body;
+    }
+    function setStatus(text, error = false) {
+      statusEl.textContent = text;
+      statusEl.classList.toggle("error", error);
+    }
+    function renderLogin(state) {
+      const panel = document.querySelector("#login-panel");
+      panel.hidden = !state.needs_login;
+      document.querySelector("#phone-step").hidden = state.login_stage !== "phone";
+      document.querySelector("#code-step").hidden = state.login_stage !== "code";
+      document.querySelector("#password-step").hidden = state.login_stage !== "password";
+    }
+    function renderChats() {
+      const selected = new Set(
+        [...chatsEl.querySelectorAll("input[type=checkbox]:checked")].map((item) => item.value)
+      );
+      chatsEl.replaceChildren();
+      if (!chats.length) {
+        chatsEl.textContent = "No channels or groups loaded yet.";
+        updateSelectionSummary();
+        return;
+      }
+      for (const chat of chats) {
+        const label = document.createElement("label");
+        label.className = "chat-option";
+        const checkbox = document.createElement("input");
+        checkbox.type = "checkbox";
+        checkbox.value = chat.id;
+        checkbox.checked = chatListInitialized && selected.has(String(chat.id));
+        checkbox.disabled = Boolean(window.scanIsRunning);
+        const text = document.createElement("span");
+        text.textContent = `${chat.title} (${chat.kind})`;
+        label.append(checkbox, text);
+        chatsEl.append(label);
+      }
+      chatListInitialized = true;
+      updateSelectionSummary();
+    }
+    function updateSelectionSummary() {
+      const selected = chatsEl.querySelectorAll("input[type=checkbox]:checked").length;
+      selectedSummary.textContent = selected
+        ? `${selected} of ${chats.length} channel(s)/group(s) selected. Review the list before starting.`
+        : "No chats selected. Select only the channels/groups you want to scan.";
+      scanButton.disabled = Boolean(window.scanIsRunning) || selected === 0;
+    }
+    async function loadChats() {
+      setStatus("Connecting to Telegram and loading your joined chats. The first run may ask for sign-in in the terminal…");
+      try {
+        await request("/api/chats/reload", { method: "POST", body: "{}" });
+        await pollStatus();
+      } catch (error) {
+        setStatus(error.message, true);
+      }
+    }
+    async function pollStatus() {
+      clearTimeout(statusTimer);
+      try {
+        const state = await request("/api/status");
+        let statusMessage = state.message;
+        if (
+          state.running &&
+          state.job_kind === "scan" &&
+          state.message.startsWith("Loading the product recognizer") &&
+          state.model_download_total
+        ) {
+          const downloaded = state.model_download_bytes || 0;
+          const total = state.model_download_total;
+          const percent = Math.floor(downloaded * 100 / total);
+          statusMessage =
+            `Loading product recognizer: ${percent}% (${Math.floor(downloaded / 1048576)} / ` +
+            `${Math.ceil(total / 1048576)} MB). Message scanning starts after the model loads.`;
+        } else if (
+          !state.running &&
+          state.message.startsWith("Scan stopped") &&
+          state.model_download_total &&
+          state.model_download_bytes < state.model_download_total
+        ) {
+          const downloaded = state.model_download_bytes || 0;
+          const total = state.model_download_total;
+          const percent = Math.floor(downloaded * 100 / total);
+          statusMessage =
+            `Scan stopped before checking any messages. Model download is continuing: ${percent}% ` +
+            `(${Math.floor(downloaded / 1048576)} / ${Math.ceil(total / 1048576)} MB). ` +
+            `Please wait before starting another scan.`;
+        }
+        setStatus(state.error ? `${statusMessage}\n${state.error}` : statusMessage, Boolean(state.error));
+        renderLogin(state);
+        window.scanIsRunning = state.running;
+        scanButton.disabled = state.running || !chatsEl.querySelector("input[type=checkbox]:checked");
+        cancelButton.hidden = !state.running || state.job_kind !== "scan";
+        cancelButton.disabled = Boolean(state.cancel_requested);
+        document.querySelectorAll("#load-chats, #select-all, #select-none, #start-date, #end-date, #market")
+          .forEach((control) => control.disabled = state.running);
+        chatsEl.querySelectorAll("input[type=checkbox]").forEach((checkbox) => checkbox.disabled = state.running);
+        if (state.chat_total) {
+            progressFill.parentElement.classList.toggle("running", state.running && state.job_kind === "scan");
+            if (state.running && state.job_kind === "scan") {
+              progressFill.style.transform = "";
+            } else {
+              const progress = /Scan (stopped|finished)/i.test(state.message) ? 1 : 0;
+              progressFill.style.transform = `scaleX(${progress})`;
+            }
+        } else {
+            progressFill.parentElement.classList.remove("running");
+            progressFill.style.transform = state.running ? "scaleX(.08)" : "scaleX(0)";
+        }
+        const chatResponse = await request("/api/chats");
+        if (JSON.stringify(chatResponse.chats) !== JSON.stringify(chats)) {
+          chats = chatResponse.chats;
+          renderChats();
+        }
+        if (!state.running && !state.error) {
+          await loadResults();
+          updateSelectionSummary();
+        }
+        if (state.running || chatResponse.loading) statusTimer = setTimeout(pollStatus, 1200);
+      } catch (error) {
+        setStatus(error.message, true);
+      }
+    }
+    async function loadResults() {
+      const response = await request("/api/results");
+      renderResults(response.products, response.scan, response.legacy_results_unreliable);
+    }
+    function makeLink(text, url) {
+      const link = document.createElement("a");
+      link.href = url;
+      link.target = "_blank";
+      link.rel = "noopener noreferrer";
+      link.textContent = text;
+      return link;
+    }
+    function addCell(row, content) {
+      const cell = document.createElement("td");
+      if (content instanceof Node) cell.append(content);
+      else cell.textContent = content;
+      row.append(cell);
+      return cell;
+    }
+    function renderOfferDetails(offers, product) {
+      const details = document.createElement("details");
+      details.className = "offer-list";
+      const summary = document.createElement("summary");
+      summary.textContent = `Compare ${offers.length} Telegram offer(s)`;
+      details.append(summary);
+      for (const offer of offers) {
+        const item = document.createElement("div");
+        item.className = "offer-item";
+        const supplier = document.createElement("strong");
+        supplier.textContent = offer.supplier;
+        item.append(supplier);
+        [
+          `Chat: ${offer.channel}`,
+          offer.price == null ? "Price: not detected" : `Listed price: ${offer.currency || ""} ${offer.price}${offer.price_unit ? ` per ${offer.price_unit}` : " (unit not detected)"}`,
+          `MOQ: ${offer.moq || "not detected"}`,
+          `Size: ${offer.size || "not detected"}`,
+          `Views: ${offer.views == null ? "not shown" : offer.views}`,
+          `Forwards: ${offer.forwards == null ? "not shown" : offer.forwards}`,
+          `Posted: ${offer.date ? new Date(offer.date).toLocaleString() : "unknown"}`
+        ].forEach((text) => {
+          const line = document.createElement("p");
+          line.textContent = text;
+          item.append(line);
+        });
+        if (offer.image) {
+          const image = document.createElement("img");
+          image.src = offer.image;
+          image.alt = `Photo for ${product}`;
+          item.append(image);
+        }
+        if (offer.telegram_url) item.append(makeLink("Open original Telegram post", offer.telegram_url));
+        const message = document.createElement("details");
+        const messageSummary = document.createElement("summary");
+        messageSummary.textContent = "Full post text";
+        const excerpt = document.createElement("p");
+        excerpt.textContent = offer.message;
+        message.append(messageSummary, excerpt);
+        item.append(message);
+        details.append(item);
+      }
+      return details;
+    }
+    function field(labelText, type, value, attributes = {}) {
+      const label = document.createElement("label");
+      label.textContent = labelText;
+      const input = document.createElement(
+        type === "select" ? "select" : type === "textarea" ? "textarea" : "input"
+      );
+      if (type !== "select" && type !== "textarea") input.type = type;
+      for (const [key, attributeValue] of Object.entries(attributes)) {
+        input[key] = attributeValue;
+      }
+      if (type === "select") {
+        for (const [optionValue, optionText] of [
+          ["unknown", "Not checked"],
+          ["rising", "Rising"],
+          ["stable", "Stable"],
+          ["falling", "Falling"]
+        ]) {
+          const option = document.createElement("option");
+          option.value = optionValue;
+          option.textContent = optionText;
+          input.append(option);
+        }
+      }
+      input.value = value ?? "";
+      label.append(input);
+      return { label, input };
+    }
+    function renderMarketResearch(product) {
+      const box = document.createElement("div");
+      box.className = "research-box";
+      const links = document.createElement("div");
+      links.className = "research-links";
+      links.append(
+        makeLink("Open Google Trends", product.google_trends_url),
+        makeLink("Open Meta Ad Library", product.meta_ads_url),
+        makeLink("Search Google Shopping", product.shopping_url),
+        makeLink("Search TikTok", product.tiktok_url)
+      );
+      box.append(links);
+      const evidence = product.market_research || {};
+      const [trendField, trend] = Object.values(field("Google Trends interest", "select", evidence.trend_direction || "unknown"));
+      const [adsField, ads] = Object.values(field("Active Meta ads found (enter 0 if none)", "number", evidence.active_ads, { min: "0", step: "1" }));
+      const [ageField, adAge] = Object.values(field("Age in days of oldest active ad", "number", evidence.oldest_ad_days, { min: "0", step: "1" }));
+      const [viewsField, socialViews] = Object.values(field("Social post views (observed)", "number", evidence.social_views, { min: "0", step: "1" }));
+      const [interactionsField, socialInteractions] = Object.values(field("Social likes/comments/shares (observed)", "number", evidence.social_interactions, { min: "0", step: "1" }));
+      const [sourceField, socialSource] = Object.values(field("Social post URL (optional)", "url", evidence.social_source_url));
+      const [notesField, notes] = Object.values(field("Research notes / ad evidence", "textarea", evidence.notes));
+      box.append(trendField, adsField, ageField, viewsField, interactionsField, sourceField, notesField);
+      const save = document.createElement("button");
+      save.type = "button";
+      save.textContent = "Save market research";
+      save.addEventListener("click", async () => {
+        save.disabled = true;
+        try {
+          await request("/api/research/save", {
+            method: "POST",
+            body: JSON.stringify({
+              product_key: product.key,
+              trend_direction: trend.value,
+              active_ads: ads.value,
+              oldest_ad_days: adAge.value,
+              social_views: socialViews.value,
+              social_interactions: socialInteractions.value,
+              social_source_url: socialSource.value,
+              notes: notes.value
+            })
+          });
+          setStatus("Research notes saved; the test-priority estimate has been updated.");
+          await loadResults();
+        } catch (error) {
+          setStatus(error.message, true);
+          save.disabled = false;
+        }
+      });
+      box.append(save);
+      const [urlField, competitorUrl] = Object.values(field("Competitor product page URL", "url", ""));
+      const fetchButton = document.createElement("button");
+      fetchButton.type = "button";
+      fetchButton.className = "secondary";
+      fetchButton.textContent = "Fetch competitor listing and price";
+      fetchButton.addEventListener("click", async () => {
+        if (!competitorUrl.value.trim()) {
+          setStatus("Paste a public competitor product-page URL first.", true);
+          return;
+        }
+        fetchButton.disabled = true;
+        setStatus("Checking that public product page for its listed title and price…");
+        try {
+          await request("/api/competitor/fetch", {
+            method: "POST",
+            body: JSON.stringify({ product_key: product.key, url: competitorUrl.value.trim() })
+          });
+          setStatus("Competitor listing checked. A price is shown only when the public page exposed one.");
+          await loadResults();
+        } catch (error) {
+          setStatus(error.message, true);
+          await loadResults();
+          fetchButton.disabled = false;
+        }
+      });
+      box.append(urlField, fetchButton);
+      for (const listing of product.competitor_listings || []) {
+        const result = document.createElement("div");
+        result.className = "competitor-item small";
+        if (listing.status === "failed") {
+          result.textContent = `Could not read ${listing.url}: ${listing.error_text}`;
+        } else {
+          const title = document.createElement("strong");
+          title.textContent = listing.title || "Competitor listing";
+          const price = document.createElement("p");
+          price.textContent = listing.price == null
+            ? "Public page did not expose a machine-readable price."
+            : `Competitor listed price: ${listing.currency || ""} ${listing.price}`;
+          result.append(title, price, makeLink("Open competitor page", listing.url));
+          const fetched = document.createElement("p");
+          fetched.className = "muted";
+          fetched.textContent = `Checked ${listing.fetched_at ? new Date(listing.fetched_at).toLocaleString() : "time unavailable"}`;
+          result.append(fetched);
+          if (listing.description) {
+            const description = document.createElement("p");
+            description.textContent = listing.description;
+            result.append(description);
+          }
+        }
+        box.append(result);
+      }
+      return box;
+    }
+    function renderResults(products, scan, legacyResultsUnreliable = false) {
+      resultsEl.replaceChildren();
+      const scanSummary = document.querySelector("#scan-summary");
+      if (scan) {
+        scanSummary.textContent =
+          `Last scan: ${scan.start_date} through ${scan.end_date} · ${scan.chat_count} chats · ` +
+          `${scan.scanned_messages} messages checked · ${scan.products_found} posts flagged for review · ` +
+          `${products.length} result row(s) · ${scan.status}.`;
+        if (legacyResultsUnreliable) {
+          scanSummary.textContent +=
+            " This older scan used an unsuitable name extractor; its product names are hidden. Run a new scan for corrected results.";
+        }
+      } else {
+        scanSummary.textContent = "";
+      }
+      if (!products.length) {
+        resultsEl.className = "table-wrap";
+        const table = document.createElement("table");
+        const head = document.createElement("thead");
+        const header = document.createElement("tr");
+        ["#", "Image", "Product title", "Description", "Listed supplier prices", "Competitor prices", "Telegram post", "Test priority", "Details", "Market research"].forEach((title) => {
+          const cell = document.createElement("th");
+          cell.textContent = title;
+          header.append(cell);
+        });
+        head.append(header);
+        table.append(head);
+        const body = document.createElement("tbody");
+        const emptyRow = document.createElement("tr");
+        const emptyCell = document.createElement("td");
+        emptyCell.colSpan = 10;
+        emptyCell.className = "empty";
+        emptyCell.textContent = legacyResultsUnreliable
+          ? "These old results are hidden because the previous extractor produced unreliable product-name fragments. Run a fresh scan; Arabic product posts will be listed for review with their original message and photo instead of a guessed name."
+          : !scan
+          ? "No scan has finished yet. Choose a few chats and a short date range to try it."
+          : scan.status === "cancelled"
+            ? `The scan was stopped after checking ${scan.scanned_messages} messages. Product results collected before stopping are shown here if any were found.`
+            : scan.status === "failed"
+              ? "The last scan failed. Check the status message above, then retry with a smaller number of chats or a shorter date range."
+              : "The scan completed, but no posts matched the current extraction rules. Try more chats or a different date range.";
+        emptyRow.append(emptyCell);
+        body.append(emptyRow);
+        table.append(body);
+        resultsEl.append(table);
+        return;
+      }
+      resultsEl.className = "";
+      const wrapper = document.createElement("div");
+      wrapper.className = "table-wrap";
+      const table = document.createElement("table");
+      const head = document.createElement("thead");
+      const headerRow = document.createElement("tr");
+      ["#", "Image", "Product title", "Description", "Listed supplier prices", "Competitor prices", "Telegram post", "Test priority", "Details", "Market research"].forEach((title) => {
+        const th = document.createElement("th");
+        th.textContent = title;
+        headerRow.append(th);
+      });
+      head.append(headerRow);
+      table.append(head);
+      const body = document.createElement("tbody");
+      products.forEach((product, index) => {
+        const row = document.createElement("tr");
+        addCell(row, String(index + 1));
+        const imageCell = document.createElement("td");
+        const firstImage = product.offers.find((offer) => offer.image)?.image;
+        if (firstImage) {
+          const image = document.createElement("img");
+          image.className = "product-image";
+          image.src = firstImage;
+          image.alt = `Telegram photo for ${product.product}`;
+          imageCell.append(image);
+        } else {
+          imageCell.textContent = "No photo in post";
+        }
+        row.append(imageCell);
+        const productCell = document.createElement("td");
+        const name = document.createElement("strong");
+        name.textContent = product.product;
+        productCell.append(name);
+        if (product.candidate_only) {
+          const note = document.createElement("p");
+          note.className = "muted small";
+          note.textContent = "Unverified title from the offer post";
+          productCell.append(note);
+        }
+        row.append(productCell);
+        const descriptionCell = document.createElement("td");
+        descriptionCell.textContent = product.description || "No description text captured";
+        row.append(descriptionCell);
+        const attributes = Object.entries(product.attributes || {})
+          .map(([key, values]) => `${key.replaceAll("_", " ")}: ${values.join(", ")}`);
+        const supplierPrices = document.createElement("div");
+        supplierPrices.className = "price-list";
+        for (const offer of product.offers) {
+          const line = document.createElement("p");
+          line.textContent = offer.price == null
+            ? `${offer.supplier}: no price detected`
+            : `${offer.supplier}: ${offer.currency || ""} ${offer.price}${offer.price_unit ? ` / ${offer.price_unit}` : " (unit not stated)"}`;
+          supplierPrices.append(line);
+        }
+        addCell(row, supplierPrices);
+        const competitorCell = document.createElement("td");
+        for (const listing of product.competitor_listings || []) {
+          if (listing.status === "ok") {
+            const line = document.createElement("p");
+            line.textContent = listing.price == null
+              ? `${listing.title || "Listing"}: price not exposed`
+              : `${listing.title || "Competitor"}: ${listing.currency || ""} ${listing.price}`;
+            competitorCell.append(line);
+          }
+        }
+        if (!competitorCell.childNodes.length) competitorCell.textContent = "Research a public listing below";
+        row.append(competitorCell);
+        const telegramCell = document.createElement("td");
+        const telegramOffer = product.offers.find((offer) => offer.telegram_url);
+        if (telegramOffer) telegramCell.append(makeLink("Open Telegram post", telegramOffer.telegram_url));
+        else telegramCell.textContent = "No direct link available";
+        row.append(telegramCell);
+        const scoreCell = document.createElement("td");
+        if (product.candidate_only) {
+          scoreCell.textContent = "Review post";
+          const candidateNote = document.createElement("p");
+          candidateNote.className = "muted";
+          candidateNote.textContent = "No reliable product name detected";
+          scoreCell.append(candidateNote);
+        } else {
+          const score = document.createElement("span");
+          score.className = "score";
+          score.textContent = `${product.score}/100`;
+          scoreCell.append(score);
+          const breakdown = document.createElement("details");
+          const breakdownSummary = document.createElement("summary");
+          breakdownSummary.textContent = product.research_coverage
+            ? `Research-informed · ${product.research_coverage} source type(s) recorded`
+            : "Preliminary Telegram-only score";
+          const breakdownText = document.createElement("p");
+          const points = product.score_breakdown;
+          const marketPoints = Object.entries(points.market_research || {})
+            .filter(([key]) => key !== "telegram_baseline")
+            .map(([key, value]) => `${key.replaceAll("_", " ")} ${value}/20`);
+          breakdownText.textContent =
+            `Telegram baseline ${product.telegram_score}/100: posts ${points.telegram_post_frequency}/25, distinct suppliers ${points.supplier_mentions}/20, views ${points.post_views}/20, offer details ${points.offer_detail_completeness}/20, recency ${points.recency}/15. ` +
+            `Recorded market observations: ${marketPoints.length ? marketPoints.join("; ") : "none yet"}. These are user-recorded clues with partial weight, not sales proof or a probability of success.`;
+          breakdown.append(breakdownSummary, breakdownText);
+          scoreCell.append(breakdown);
+        }
+        row.append(scoreCell);
+        const detailsCell = document.createElement("td");
+        detailsCell.append(
+          document.createTextNode(`${product.posts} post(s) · ${product.sellers} supplier(s) · max views ${product.max_views ?? "not shown"}`),
+          document.createElement("br")
+        );
+        detailsCell.append(renderOfferDetails(product.offers, product.product));
+        if (attributes.length) {
+          const attributeDetails = document.createElement("details");
+          const summary = document.createElement("summary");
+          summary.textContent = "Extracted product specifications";
+          const text = document.createElement("p");
+          text.textContent = attributes.join(" · ");
+          attributeDetails.append(summary, text);
+          detailsCell.append(attributeDetails);
+        }
+        row.append(detailsCell);
+        const researchCell = document.createElement("td");
+        researchCell.append(renderMarketResearch(product));
+        row.append(researchCell);
+        body.append(row);
+      });
+      table.append(body);
+      wrapper.append(table);
+      resultsEl.append(wrapper);
+      const warning = document.createElement("p");
+      warning.className = "warning";
+      warning.textContent = "Google Trends and Meta Ad Library open as public research pages; their content cannot be reliably collected automatically without authorized APIs. Enter only what you actually observe. Competitor pages are read for public structured product data, and sites may block access. Supplier and competitor prices are not directly comparable unless currency, unit, shipping and tax basis match. A test-priority score is not proof of demand or profit.";
+      resultsEl.append(warning);
+    }
+
+    document.querySelector("#load-chats").addEventListener("click", loadChats);
+    document.querySelector("#send-code").addEventListener("click", async () => {
+      try {
+        await request("/api/auth/send-code", {
+          method: "POST",
+          body: JSON.stringify({ phone: document.querySelector("#phone").value })
+        });
+        await pollStatus();
+      } catch (error) {
+        setStatus(error.message, true);
+      }
+    });
+    document.querySelector("#verify-code").addEventListener("click", async () => {
+      const codeInput = document.querySelector("#login-code");
+      const code = codeInput.value;
+      codeInput.value = "";
+      try {
+        await request("/api/auth/verify-code", {
+          method: "POST",
+          body: JSON.stringify({ code })
+        });
+        await pollStatus();
+      } catch (error) {
+        setStatus(error.message, true);
+      }
+    });
+    document.querySelector("#verify-password").addEventListener("click", async () => {
+      const passwordInput = document.querySelector("#login-password");
+      const password = passwordInput.value;
+      passwordInput.value = "";
+      try {
+        await request("/api/auth/verify-password", {
+          method: "POST",
+          body: JSON.stringify({ password })
+        });
+        await pollStatus();
+      } catch (error) {
+        setStatus(error.message, true);
+      }
+    });
+    chatsEl.addEventListener("change", updateSelectionSummary);
+    document.querySelector("#select-all").addEventListener("click", () => {
+      chatsEl.querySelectorAll("input[type=checkbox]").forEach((checkbox) => checkbox.checked = true);
+      updateSelectionSummary();
+    });
+    document.querySelector("#select-none").addEventListener("click", () => {
+      chatsEl.querySelectorAll("input[type=checkbox]").forEach((checkbox) => checkbox.checked = false);
+      updateSelectionSummary();
+    });
+    scanButton.addEventListener("click", async () => {
+      const chatIds = [...chatsEl.querySelectorAll("input[type=checkbox]:checked")].map((item) => item.value);
+      if (!chatIds.length) {
+        setStatus("Select at least one Telegram channel or group first.", true);
+        return;
+      }
+      const startDate = document.querySelector("#start-date").value;
+      const endDate = document.querySelector("#end-date").value;
+      const selectedNames = [...chatsEl.querySelectorAll("input[type=checkbox]:checked")]
+        .map((input) => input.parentElement.textContent.trim());
+      const confirmed = window.confirm(
+        `About to scan ${chatIds.length} Telegram channel/group(s) from ${startDate} through ${endDate}.\n\n` +
+        `This reads message history and may take a while. You can stop it at any time; results collected so far will be kept.\n\n` +
+        `Selected chats:\n${selectedNames.slice(0, 8).join("\n")}` +
+        (selectedNames.length > 8 ? `\n…and ${selectedNames.length - 8} more.` : "") +
+        `\n\nThis does not send messages, join chats, or change anything in Telegram. Start scan?`
+      );
+      if (!confirmed) return;
+      scanButton.disabled = true;
+      try {
+        await request("/api/scan", {
+          method: "POST",
+          body: JSON.stringify({
+            chat_ids: chatIds,
+            start_date: startDate,
+            end_date: endDate,
+            market: document.querySelector("#market").value
+          })
+        });
+        await pollStatus();
+      } catch (error) {
+        scanButton.disabled = false;
+        setStatus(error.message, true);
+      }
+    });
+    cancelButton.addEventListener("click", async () => {
+      cancelButton.disabled = true;
+      try {
+        await request("/api/scan/cancel", { method: "POST", body: "{}" });
+        setStatus("Stop requested. Finishing the current message and saving partial results…");
+        await pollStatus();
+      } catch (error) {
+        cancelButton.disabled = false;
+        setStatus(error.message, true);
+      }
+    });
+    pollStatus();
+  </script>
+</body>
+</html>
