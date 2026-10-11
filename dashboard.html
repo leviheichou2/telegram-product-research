@@ -961,6 +961,92 @@
     .metric-label { padding-right: 0; }
     .product-thumb { width: 60px; height: 60px; }
   }
+
+  /* ==========================================================================
+     AD MEDIA  (thumbnails / videos inside Meta Ad profile rows)
+     ========================================================================== */
+  .ad-media {
+    display: flex; flex-wrap: wrap; gap: 8px; margin-top: 6px;
+  }
+  .ad-media img, .ad-media video {
+    width: 96px; height: 80px; object-fit: cover;
+    border-radius: var(--r-sm); border: 1px solid var(--border);
+    background: #f4f7fb; display: block;
+  }
+  .ad-media a.ad-media-link {
+    display: inline-flex; align-items: center; gap: 5px;
+    padding: 4px 10px; border-radius: var(--r-sm);
+    border: 1px solid var(--border-2); font-size: 12px;
+    color: var(--teal-600); background: #fff;
+  }
+  .ad-media a.ad-media-link:hover { background: var(--teal-tint); border-color: var(--teal); }
+  .ad-row { border-top: 1px dashed var(--border); padding-top: 10px; margin-top: 10px; }
+  .ad-row:first-child { border-top: 0; margin-top: 0; padding-top: 0; }
+  .ad-row-head { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-bottom: 6px; }
+  .ad-page-name { font-size: 13px; font-weight: 700; color: var(--ink); }
+  .ad-status-pill { font-size: 11px; font-weight: 750; padding: 2px 8px; border-radius: 999px; }
+  .ad-status-pill.active { color: var(--ok); background: #e2f6ea; }
+  .ad-status-pill.inactive { color: var(--muted); background: #eef1f6; }
+  .ad-creative { font-size: 12px; color: var(--muted); margin: 4px 0; line-height: 1.45; }
+  .ad-meta-chips { display: flex; flex-wrap: wrap; gap: 5px; margin-top: 4px; }
+  .ad-meta-chip { font-size: 11px; color: var(--ink-soft); background: #f1f5fa; padding: 2px 8px; border-radius: 999px; }
+
+  /* ==========================================================================
+     IMAGE CAROUSEL
+     ========================================================================== */
+  .carousel { position: relative; }
+  .carousel-track { display: flex; gap: 8px; overflow: hidden; }
+  .carousel-track img {
+    flex: 0 0 auto; width: 96px; height: 96px; object-fit: cover;
+    border-radius: var(--r-sm); border: 1px solid var(--border);
+    cursor: pointer; transition: opacity .15s ease;
+  }
+  .carousel-track img:hover { opacity: .85; }
+  .carousel-nav { display: flex; gap: 6px; margin-top: 7px; }
+  .carousel-nav button {
+    padding: 5px 10px; font-size: 15px; font-weight: 800; line-height: 1;
+    border: 1px solid var(--border-2); color: var(--ink-soft); background: #fff;
+    border-radius: var(--r-sm); box-shadow: none;
+  }
+  .carousel-nav button:hover:not(:disabled) { background: #f2f6fb; box-shadow: none; }
+  .carousel-counter { align-self: center; font-size: 12px; color: var(--muted); }
+
+  /* ==========================================================================
+     SPEC TABLE MODAL
+     ========================================================================== */
+  .spec-modal-overlay {
+    position: fixed; inset: 0; z-index: 300;
+    display: grid; place-items: center; padding: 22px;
+    background: rgba(15, 23, 42, .5);
+    backdrop-filter: blur(3px);
+  }
+  .spec-modal-overlay.hidden { display: none !important; }
+  .spec-modal {
+    width: min(580px, 100%); max-height: 80vh; overflow: auto;
+    background: #fff; border-radius: var(--r-lg);
+    box-shadow: 0 28px 70px rgba(16, 24, 40, .32);
+    animation: modal-in .22s cubic-bezier(.2, .8, .25, 1);
+  }
+  .spec-modal-head {
+    position: sticky; top: 0; z-index: 2;
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 14px 18px; background: #fff;
+    border-bottom: 1px solid var(--border);
+  }
+  .spec-modal-head h3 { margin: 0; font-size: 15px; }
+  .spec-modal-body { padding: 16px 18px 20px; }
+  .spec-modal-body table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  .spec-modal-body th, .spec-modal-body td { text-align: left; padding: 7px 10px; border-bottom: 1px solid #eef1f6; }
+  .spec-modal-body th { background: #f7f9fc; font-size: 11px; font-weight: 800; letter-spacing: .06em; text-transform: uppercase; color: var(--muted); }
+  .btn-specs {
+    display: inline-flex; align-items: center; gap: 5px;
+    padding: 5px 11px; margin-top: 6px;
+    border: 1px solid var(--border-2); border-radius: var(--r-sm);
+    background: #fff; color: var(--ink-soft);
+    font-size: 12px; font-weight: 700; cursor: pointer;
+    box-shadow: none;
+  }
+  .btn-specs:hover:not(:disabled) { background: #f5f8fc; border-color: #bccadb; box-shadow: none; }
 </style>
 </head>
 
@@ -1325,30 +1411,13 @@
 
           <div id="results" class="empty">Run a scan to see product opportunities here.</div>
 
-          <p class="warning">Google Trends and Meta Ad Library open as public research pages; record only what you actually observe. A test-priority score is a research aid, not proof of sales or profit. Retailers may block price lookup, and wholesale/retail prices are comparable only when currency, unit, shipping, and taxes match.</p>
+          <p class="warning">Google Trends and Meta Ad Library open as public research pages; record only what you actually observe. A test-priority score is a research aid, not proof of sales or profit. Retailers may block price lookup, and wholesale/retail prices are comparable only when currency, unit, shipping, and taxes match.</p>        </section>
 
-        </section>
-    
-<article class="panel mp-page" id="meta-summary-page">
-  <p class="eyebrow">META AD LIBRARY</p>
-  <h3>Meta ad activity</h3>
-  <p class="mp-sub">How many active Meta ads were found for your products, and whether a lookup is running.</p>
-  <div class="mp-row">
-    <button id="mp-meta-reload" class="mp-btn primary" type="button">Load summary</button>
-    <button id="mp-meta-resume" class="mp-btn" type="button">Resume Meta lookup</button>
-  </div>
-  <div id="mp-meta-out" class="mp-out">Load the summary to see Meta ad activity.</div>
-</article>
+      <details class="panel" id="debug-panel" style="margin-top:16px;">
+        <summary><strong>Debug log</strong> <span class="muted">(all API requests and responses)</span></summary>
+        <pre id="debug-log" style="max-height:200px;overflow:auto;font-size:11px;white-space:pre-wrap;background:#1a1a2e;color:#a8d8ea;padding:10px;border-radius:6px;margin-top:8px;font-family:monospace;"></pre>
+      </details>
 
-<article class="panel mp-page" id="identification-summary-page">
-  <p class="eyebrow">IDENTIFICATION STATUS</p>
-  <h3>Photo &amp; web identification</h3>
-  <p class="mp-sub">Progress of automatic photo identification and web research across your products.</p>
-  <div class="mp-row">
-    <button id="mp-ident-summary-reload" class="mp-btn primary" type="button">Load summary</button>
-  </div>
-  <div id="mp-ident-summary-out" class="mp-out">Load the summary to see identification progress.</div>
-</article>
 </div>
 
     <!-- ===================== PAGE: PRODUCT PROFILE (inner page) ===================== -->
@@ -1550,6 +1619,17 @@
 
   </div>
 
+<!-- ============ spec table modal ============ -->
+<div class="spec-modal-overlay hidden" id="spec-modal" role="presentation">
+  <div class="spec-modal" role="dialog" aria-modal="true" aria-labelledby="spec-modal-title">
+    <div class="spec-modal-head">
+      <h3 id="spec-modal-title">Specifications</h3>
+      <button type="button" class="modal-close" id="spec-modal-close" aria-label="Close">×</button>
+    </div>
+    <div class="spec-modal-body" id="spec-modal-body">No specifications loaded.</div>
+  </div>
+</div>
+
 <!-- ============ connection dialog (modal) ============ -->
 <div class="modal-overlay hidden" id="conn-modal" role="presentation">
   <div class="modal" role="dialog" aria-modal="true" aria-labelledby="conn-modal-title">
@@ -1635,24 +1715,125 @@
 
 
 
+    var _logEntries = [];
+    var _logSeq = 0;
+    function _log(kind, message) {
+      _logSeq++;
+      var ts = new Date().toISOString();
+      var seq = String(_logSeq).padStart(4, '0');
+      var line = ts + ' #' + seq + ' [' + kind.padEnd(6, ' ') + '] ' + String(message == null ? '' : message);
+      _logEntries.push(line);
+      if (_logEntries.length > 300) _logEntries.shift();
+      console.log(line);
+      var box = document.getElementById('debug-log');
+      if (box) {
+        box.textContent = _logEntries.join('\n');
+        box.scrollTop = box.scrollHeight;
+      }
+    }
+    function _logJSON(label, obj) {
+      try { _log(label, JSON.stringify(obj, null, 2)); }
+      catch (e) { _log(label, String(obj)); }
+    }
+
     async function request(path, options = {}) {
 
-      const response = await fetch(path, {
+      var method = (options && options.method) || 'GET';
 
-        headers: { "Content-Type": "application/json" },
+      var opts = options || {};
 
-        ...options
+      if (!opts.headers) opts.headers = {};
 
-      });
+      var contentType = opts.headers['Content-Type'] || 'application/json';
 
-      const body = await response.json();
+      opts.headers['Content-Type'] = contentType;
 
-      if (!response.ok) throw new Error(body.error || response.statusText);
+      var bodyStr = opts.body ? String(opts.body) : '';
 
-      return body;
+      _log('REQ', method + ' ' + path + (bodyStr ? ' [→ ' + bodyStr.slice(0, 300) + (bodyStr.length > 300 ? '...' : '') + ']' : ''));
+
+      if (bodyStr) {
+
+        try { _logJSON('REQ_BODY', JSON.parse(bodyStr)); } catch (e) { _log('REQ_BODY_RAW', bodyStr.slice(0, 500)); }
+
+      }
+
+      try {
+
+        const fetchOpts = {
+
+          method: method,
+
+          headers: opts.headers,
+
+        };
+
+        if (opts.body !== undefined && opts.body !== null) fetchOpts.body = opts.body;
+
+        _logJSON('FETCH_OPTS', { method: fetchOpts.method, url: path, hasBody: !!fetchOpts.body, headers: opts.headers });
+
+        const response = await fetch(path, fetchOpts);
+
+        _log('RES_STATUS', response.status + ' ' + response.statusText + ' ' + path);
+
+        const respHeaders = {};
+
+        response.headers.forEach(function(v, k) { respHeaders[k] = v; });
+
+        _logJSON('RES_HEADERS', respHeaders);
+
+        const text = await response.text();
+
+        _log('RES_BODY_RAW', text.slice(0, 1000) + (text.length > 1000 ? '\n...[truncated ' + (text.length - 1000) + ' more chars]' : ''));
+
+        let body = {};
+
+        if (text.trim()) {
+
+          try { body = JSON.parse(text); _logJSON('RES_JSON', body); }
+
+          catch (e) { _log('RES_PARSE_FAIL', 'Could not parse response as JSON. Raw: ' + text.slice(0, 500)); body = { error: text.slice(0, 500) }; }
+
+        }
+
+        if (!response.ok) {
+
+          var errMsg = body.error != null ? String(body.error) : response.statusText || 'Request failed';
+
+          _log('ERR', 'HTTP ' + response.status + ': ' + errMsg);
+
+          var err = new Error(errMsg);
+
+          err.responseStatus = response.status;
+
+          err.responseBody = body;
+
+          throw err;
+
+        }
+
+        return body;
+
+      } catch (err) {
+
+        if (err.message && err.message.startsWith('TypeError')) {
+
+          _log('NETERR', 'Network error: ' + err.message + ' (path: ' + path + ', method: ' + method + ')');
+
+        } else {
+
+          _log('FATAL', 'Unhandled: ' + err.message + ' (path: ' + path + ', method: ' + method + ')');
+
+        }
+
+        throw err;
+
+      }
 
     }
 
+    var _lastStatusMsg = '';
+    var _lastStatusTime = 0;
     function setStatus(text, error = false) {
 
       if (!text) return;
@@ -1665,9 +1846,19 @@
 
       }
 
-      if (window.__notify) {
+      var now = Date.now();
 
-        window.__notify(msg, error ? 'error' : 'info', error ? 'Error' : 'Status');
+      if (error || msg !== _lastStatusMsg || now - _lastStatusTime > 4000) {
+
+        _lastStatusMsg = msg;
+
+        _lastStatusTime = now;
+
+        if (window.__notify) {
+
+          window.__notify(msg, error ? 'error' : (msg !== _lastStatusMsg ? 'info' : 'info'), error ? 'Error' : 'Status');
+
+        }
 
       }
 
@@ -2404,11 +2595,45 @@
         const cellWrap = document.createElement("div");
         cellWrap.className = "product-cell";
 
-        const firstImage = product.offers.find((offer) => offer.image)?.image;
-        if (firstImage) {
+        const images = product.offers.filter((o) => o.image).map((o) => o.image);
+        if (images.length > 1) {
+          // carousel
+          const carousel = document.createElement("div");
+          carousel.className = "carousel";
+          let carouselIdx = 0;
+          const track = document.createElement("div");
+          track.className = "carousel-track";
+          const img = document.createElement("img");
+          img.className = "product-thumb";
+          img.src = images[0];
+          img.alt = `Telegram photo for ${product.product}`;
+          img.loading = "lazy";
+          track.append(img);
+          carousel.append(track);
+          const nav = document.createElement("div");
+          nav.className = "carousel-nav";
+          const prev = document.createElement("button");
+          prev.type = "button"; prev.textContent = "«"; prev.title = "Previous photo";
+          const next = document.createElement("button");
+          next.type = "button"; next.textContent = "»"; next.title = "Next photo";
+          const counter = document.createElement("span");
+          counter.className = "carousel-counter";
+          function updateCarousel() {
+            img.src = images[carouselIdx];
+            counter.textContent = `${carouselIdx + 1} / ${images.length}`;
+            prev.disabled = carouselIdx === 0;
+            next.disabled = carouselIdx === images.length - 1;
+          }
+          prev.addEventListener("click", () => { if (carouselIdx > 0) { carouselIdx--; updateCarousel(); } });
+          next.addEventListener("click", () => { if (carouselIdx < images.length - 1) { carouselIdx++; updateCarousel(); } });
+          updateCarousel();
+          nav.append(prev, counter, next);
+          carousel.append(nav);
+          cellWrap.append(carousel);
+        } else if (images.length === 1) {
           const image = document.createElement("img");
           image.className = "product-thumb";
-          image.src = firstImage;
+          image.src = images[0];
           image.alt = `Telegram photo for ${product.product}`;
           image.loading = "lazy";
           cellWrap.append(image);
@@ -2465,6 +2690,21 @@
         profileButton.textContent = "Product Profile";
         profileButton.addEventListener("click", () => window.__openProductProfile(product.key));
         main.append(profileButton);
+
+        // Specs modal trigger button (shown when attributes exist)
+        const attrs = product.attributes || {};
+        const attrCount = Object.keys(attrs).length;
+        if (attrCount) {
+          const specsBtn = document.createElement("button");
+          specsBtn.type = "button";
+          specsBtn.className = "btn-specs";
+          specsBtn.textContent = `Specifications (${attrCount})`;
+          specsBtn.addEventListener("click", (e) => {
+            e.stopPropagation();
+            window.__openSpecModal(product.product, attrs);
+          });
+          main.append(specsBtn);
+        }
 
         cellWrap.append(main);
         productCell.append(cellWrap);
@@ -2893,6 +3133,7 @@
 
   // ---------- helpers ----------
   function setStatusText(text, error) {
+    _log('CONN_TG', (error ? 'ERROR: ' : '') + String(text || ''));
     toast(text, error ? "error" : "info", error ? "Telegram" : "Telegram settings");
     if (telegramConnectStatusEl) {
       telegramConnectStatusEl.textContent = text || '';
@@ -2901,10 +3142,12 @@
   }
 
   function setMetaLog(text, error) {
+    _log('CONN_META', (error ? 'ERROR: ' : '') + String(text || ''));
     toast(text, error ? "error" : "info", "Meta Ad Library");
-    if (!metaLogEl) return;
-    metaLogEl.textContent = text || '';
-    metaLogEl.classList.toggle('error', !!error);
+    if (metaLogEl) {
+      metaLogEl.textContent = text || '';
+      metaLogEl.classList.toggle('error', !!error);
+    }
   }
 
   function toast(message, type, title) {
@@ -2913,6 +3156,7 @@
     if (msg.startsWith('{') || msg.startsWith('[')) {
       try { msg = JSON.stringify(JSON.parse(msg), null, 2); } catch (e) { msg = String(message); }
     }
+    _log('TOAST', (title || 'Status') + ': ' + msg.slice(0, 200));
     if (window.__notify) window.__notify(msg, type, title);
   }
 
@@ -3350,8 +3594,6 @@
   function onPageShown(name) {
     if (name === "products" && !loaded.products) {
       loaded.products = true;
-      loadMetaSummary();
-      loadIdentSummary();
     }
     if (name === "reports" && !loaded.reports) {
       loaded.reports = true;
@@ -3449,13 +3691,72 @@
     }
     var ads = p.active_meta_ads || [];
     if (ads.length) {
-      box2.append(table(
-        ["Page", "Ad ID", "Active", "Started", "Platforms", "Creative"],
-        ads.slice(0, 25).map(function (ad) {
-          return [ad.page_name, ad.ad_id, ad.is_active ? "yes" : "no",
-                  (ad.delivery_start || "").slice(0, 10), ad.platforms, short(ad.creative_text, 90)];
-        })
-      ));
+      ads.slice(0, 25).forEach(function (ad) {
+        var row = document.createElement("div");
+        row.className = "ad-row";
+        var head = document.createElement("div");
+        head.className = "ad-row-head";
+        var pageName = document.createElement("span");
+        pageName.className = "ad-page-name";
+        pageName.textContent = ad.page_name || "Unknown page";
+        head.append(pageName);
+        if (ad.is_active != null) {
+          var pill = document.createElement("span");
+          pill.className = "ad-status-pill " + (ad.is_active ? "active" : "inactive");
+          pill.textContent = ad.is_active ? "Active" : "Inactive";
+          head.append(pill);
+        }
+        row.append(head);
+        if (ad.creative_text) {
+          var creative = document.createElement("p");
+          creative.className = "ad-creative";
+          creative.textContent = short(ad.creative_text, 150);
+          row.append(creative);
+        }
+        var chips = document.createElement("div");
+        chips.className = "ad-meta-chips";
+        [
+          ["ID", ad.ad_id],
+          ["Started", (ad.delivery_start || "").slice(0, 10)],
+          ["Platforms", ad.platforms],
+          ["CTA", ad.cta_text],
+          ["Spend", ad.spend],
+          ["Impressions", ad.impressions]
+        ].filter(function (pair) { return pair[1]; }).forEach(function (pair) {
+          var chip = document.createElement("span");
+          chip.className = "ad-meta-chip";
+          chip.textContent = pair[0] + ": " + pair[1];
+          chips.append(chip);
+        });
+        if (chips.childNodes.length) row.append(chips);
+        var media = document.createElement("div");
+        media.className = "ad-media";
+        if (ad.image_url || ad.thumbnail_url) {
+          var img = document.createElement("img");
+          img.src = ad.image_url || ad.thumbnail_url;
+          img.alt = "Ad image";
+          img.loading = "lazy";
+          media.append(img);
+        }
+        if (ad.video_url) {
+          var vid = document.createElement("video");
+          vid.src = ad.video_url;
+          vid.controls = true;
+          vid.preload = "metadata";
+          media.append(vid);
+        }
+        if (ad.link_url) {
+          var link = document.createElement("a");
+          link.className = "ad-media-link";
+          link.href = ad.link_url;
+          link.target = "_blank";
+          link.rel = "noopener noreferrer";
+          link.textContent = "Visit advertiser page →";
+          media.append(link);
+        }
+        if (media.childNodes.length) row.append(media);
+        box2.append(row);
+      });
       if (ads.length > 25) {
         var more = document.createElement("p");
         more.textContent = "Showing 25 of " + ads.length + " ads.";
@@ -3776,7 +4077,13 @@
     var pre = document.createElement("pre");
     pre.textContent = text == null ? "" : String(text);
     box.replaceChildren(pre);
-    if (window.__notify && text) window.__notify(String(text), error ? "error" : "info");
+    if (window.__notify && text && (error || String(text).length < 200)) {
+      var msg = String(text);
+      if (msg.startsWith('{') || msg.startsWith('[')) {
+        try { msg = JSON.stringify(JSON.parse(msg), null, 2); } catch (e) { msg = String(text); }
+      }
+      window.__notify(msg, error ? 'error' : 'info');
+    }
   }
 
   function imageSearch() {
@@ -3801,27 +4108,6 @@
   }
 
   // ============================ reports ============================
-  function loadMetaSummary() {
-    mpOut("mp-meta-out", "Loading Meta ad summary\u2026");
-    request("/api/meta-ads/summary")
-      .then(function (r) { mpOut("mp-meta-out", JSON.stringify(r, null, 2)); })
-      .catch(function (err) { mpOut("mp-meta-out", (err && err.message) || err, true); });
-  }
-
-  function resumeMeta() {
-    mpOut("mp-meta-out", "Resuming Meta ad lookup\u2026");
-    request("/api/meta-ads/resume", { method: "POST", body: JSON.stringify({}) })
-      .then(function (r) { mpOut("mp-meta-out", JSON.stringify(r, null, 2)); })
-      .catch(function (err) { mpOut("mp-meta-out", (err && err.message) || err, true); });
-  }
-
-  function loadIdentSummary() {
-    mpOut("mp-ident-summary-out", "Loading identification summary\u2026");
-    request("/api/identification/summary")
-      .then(function (r) { mpOut("mp-ident-summary-out", JSON.stringify(r, null, 2)); })
-      .catch(function (err) { mpOut("mp-ident-summary-out", (err && err.message) || err, true); });
-  }
-
   function cancelOperation() {
     mpOut("mp-export-out", "Requesting cancellation\u2026");
     request("/api/operations/cancel", { method: "POST", body: JSON.stringify({}) })
@@ -3873,9 +4159,6 @@
       .catch(function (err) { mpOut("mp-image-out", (err && err.message) || err, true); });
   });
 
-  on("mp-meta-reload", loadMetaSummary);
-  on("mp-meta-resume", resumeMeta);
-  on("mp-ident-summary-reload", loadIdentSummary);
   on("mp-export-csv", function () { window.location.href = "/api/export.csv"; });
   on("mp-cancel-op", cancelOperation);
 
@@ -3981,11 +4264,116 @@
     if (window.__refreshConnectionStatus) window.__refreshConnectionStatus();
   });
 
-  // expose for other script blocks
-  window.__loadChats = loadChats;
-  window.__loadMetaSummary = loadMetaSummary;
-  window.__loadIdentSummary = loadIdentSummary;
-})();
+  // ============================ spec modal ============================
+  var specModal = el("spec-modal");
+  var specModalBody = el("spec-modal-body");
+  var specModalClose = el("spec-modal-close");
+
+  function openSpecModal(productName, attributes) {
+    if (!specModal || !specModalBody) return;
+    var rows = [];
+    Object.keys(attributes || {}).forEach(function (k) {
+      rows.push([k.replaceAll("_", " "), (attributes[k] || []).join(", ")]);
+    });
+    if (!rows.length) {
+      specModalBody.textContent = "No specifications available.";
+    } else {
+      var t = document.createElement("table");
+      var thead = document.createElement("thead");
+      var htr = document.createElement("tr");
+      ["Attribute", "Values"].forEach(function (h) {
+        var th = document.createElement("th");
+        th.textContent = h;
+        htr.append(th);
+      });
+      thead.append(htr);
+      t.append(thead);
+      var tbody = document.createElement("tbody");
+      rows.forEach(function (r) {
+        var tr = document.createElement("tr");
+        r.forEach(function (c) {
+          var td = document.createElement("td");
+          td.textContent = c;
+          tr.append(td);
+        });
+        tbody.append(tr);
+      });
+      t.append(tbody);
+      specModalBody.replaceChildren(t);
+    }
+    specModal.classList.remove("hidden");
+    document.body.classList.add("modal-open");
+  }
+
+  function closeSpecModal() {
+    if (!specModal) return;
+    specModal.classList.add("hidden");
+    document.body.classList.remove("modal-open");
+  }
+
+  window.__openSpecModal = openSpecModal;
+  window.__closeSpecModal = closeSpecModal;
+
+  if (specModalClose) specModalClose.addEventListener("click", closeSpecModal);
+  if (specModal) {
+    specModal.addEventListener("mousedown", function (e) {
+      if (e.target === specModal) closeSpecModal();
+    });
+  }
+  document.addEventListener("keydown", function (e) {
+    if (e.key === "Escape" && specModal && !specModal.classList.contains("hidden")) {
+      closeSpecModal();
+    }
+  });
+
+  // ============================ end spec modal ============================
+    _log('INFO', 'Dashboard loaded. Debug log is active.');
+
+    // Log current page and URL
+    _log('INFO', 'Page: ' + (location.pathname + location.search || '/'));
+    _log('INFO', 'Window width: ' + window.innerWidth + ', height: ' + window.innerHeight);
+
+    // Continuous background status poller — logs even when user is idle
+    setInterval(function() {
+      var xhr = new XMLHttpRequest();
+      xhr.open('GET', '/api/status', true);
+      xhr.onload = function() {
+        try {
+          var data = JSON.parse(xhr.responseText);
+          _log('BG_STATUS', 'running=' + data.running + ' error=' + (data.error || 'none') + ' msg=' + (data.message || '').slice(0, 120) + ' needs_login=' + data.needs_login + ' stage=' + (data.login_stage || 'none') + ' chats=' + (data.chats_loaded ? 'loaded' : 'empty'));
+        } catch (e) {
+          _log('BG_STATUS_ERR', 'status response parse failed: ' + xhr.status + ' ' + xhr.statusText + ' body=' + xhr.responseText.slice(0, 200));
+        }
+      };
+      xhr.onerror = function() { _log('BG_STATUS_ERR', 'status XHR failed: ' + xhr.statusText); };
+      xhr.ontimeout = function() { _log('BG_STATUS_ERR', 'status XHR timed out'); };
+      xhr.timeout = 5000;
+      xhr.send();
+    }, 3000);
+
+    // Log all click events on buttons for debugging
+    document.addEventListener('click', function(e) {
+      var t = e.target;
+      if (t.tagName === 'BUTTON' || t.tagName === 'A') {
+        var label = (t.textContent || '').trim().slice(0, 60);
+        var id = t.id ? '#' + t.id : '';
+        _log('CLICK', (t.tagName.toLowerCase()) + id + (label ? ' [' + label + ']' : ''));
+      }
+    });
+
+    // Log all form input changes on key panels
+    document.addEventListener('change', function(e) {
+      if (e.target.matches('input, select, textarea')) {
+        var id = e.target.id ? '#' + e.target.id : '';
+        _log('INPUT', (e.target.tagName.toLowerCase()) + id + ' = ' + (e.target.value || '').slice(0, 80));
+      }
+    });
+
+    // expose for other script blocks
+    window.__loadChats = loadChats;
+    window.__log = _log;
+    window.__logJSON = _logJSON;
+  })();
 </script>
 
 
