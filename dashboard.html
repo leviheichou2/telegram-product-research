@@ -2094,7 +2094,11 @@
 
         if (!state.running && !state.error) {
 
-          await loadResults();
+          // Only load results if user is on products page
+          const currentPageEl = document.querySelector(".app-page:not([hidden])");
+          if (currentPageEl && currentPageEl.id === "page-products") {
+            await loadResults();
+          }
 
           updateSelectionSummary();
 
@@ -2492,8 +2496,17 @@
 
     }
 
+    let allProducts = [];
+    let currentPage = 0;
+    let currentScan = null;
+    let currentLegacyFlag = false;
+    const PAGE_SIZE = 10;
+
     function renderResults(products, scan, legacyResultsUnreliable = false) {
-      resultsEl.replaceChildren();
+      allProducts = products;
+      currentPage = 0;
+      currentScan = scan;
+      currentLegacyFlag = legacyResultsUnreliable;
 
       const scanSummary = document.querySelector("#scan-summary");
       if (scan) {
@@ -2508,6 +2521,19 @@
       } else {
         scanSummary.textContent = "";
       }
+
+      renderPage();
+    }
+
+    function renderPage() {
+      const products = allProducts;
+      const scan = currentScan;
+      const legacyResultsUnreliable = currentLegacyFlag;
+      const start = currentPage * PAGE_SIZE;
+      const end = Math.min(start + PAGE_SIZE, products.length);
+      const pageProducts = products.slice(start, end);
+
+      resultsEl.replaceChildren();
 
       const HEADERS = [
         "#", "Product", "Supplier prices", "Competitor prices", "Meta ads",
@@ -2544,7 +2570,7 @@
         return value.length > limit ? value.slice(0, limit - 1) + "\u2026" : value;
       }
 
-      if (!products.length) {
+      if (!allProducts.length) {
         resultsEl.className = "table-wrap";
         const table = document.createElement("table");
         table.append(buildHead());
@@ -2566,6 +2592,7 @@
         body.append(tr);
         table.append(body);
         resultsEl.append(table);
+        updatePagination();
         return;
       }
 
@@ -2576,7 +2603,8 @@
       table.append(buildHead());
       const body = document.createElement("tbody");
 
-      products.forEach((product, index) => {
+      pageProducts.forEach((product, pageIndex) => {
+        const index = start + pageIndex;
         window.__productIndex = window.__productIndex || {};
         window.__productIndex[product.key] = product;
 
@@ -2912,7 +2940,41 @@
       warning.className = "warning";
       warning.textContent = "Google Trends and Meta Ad Library open as public research pages; their content cannot be reliably collected automatically without authorized APIs. Enter only what you actually observe. Competitor pages are read for public structured product data, and sites may block access. Supplier and competitor prices are not directly comparable unless currency, unit, shipping and tax basis match. A test-priority score is not proof of demand or profit.";
       resultsEl.append(warning);
+
+      updatePagination();
     }
+
+    function updatePagination() {
+      const resultCount = document.querySelector("#result-count");
+      const pageStatus = document.querySelector("#page-status");
+      const prevBtn = document.querySelector("#page-prev");
+      const nextBtn = document.querySelector("#page-next");
+
+      const total = allProducts.length;
+      const start = currentPage * PAGE_SIZE + 1;
+      const end = Math.min((currentPage + 1) * PAGE_SIZE, total);
+
+      resultCount.textContent = `${total} product${total !== 1 ? 's' : ''}`;
+      pageStatus.textContent = total ? `${start}–${end} of ${total}` : '0–0 of 0';
+      prevBtn.disabled = currentPage === 0;
+      nextBtn.disabled = end >= total;
+    }
+
+    document.querySelector("#page-prev").addEventListener("click", () => {
+      if (currentPage > 0) {
+        currentPage--;
+        renderPage();
+        window.scrollTo(0, document.querySelector("#products-section").offsetTop - 20);
+      }
+    });
+
+    document.querySelector("#page-next").addEventListener("click", () => {
+      if ((currentPage + 1) * PAGE_SIZE < allProducts.length) {
+        currentPage++;
+        renderPage();
+        window.scrollTo(0, document.querySelector("#products-section").offsetTop - 20);
+      }
+    });
 
     document.querySelector("#send-code").addEventListener("click", async () => {
 
@@ -3594,6 +3656,7 @@
   function onPageShown(name) {
     if (name === "products" && !loaded.products) {
       loaded.products = true;
+      loadResults();
     }
     if (name === "reports" && !loaded.reports) {
       loaded.reports = true;
