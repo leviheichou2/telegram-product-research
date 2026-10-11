@@ -1717,7 +1717,9 @@
 
     var _logEntries = [];
     var _logSeq = 0;
+    var DEBUG_ENABLED = false; // Set to true to enable debug logging
     function _log(kind, message) {
+      if (!DEBUG_ENABLED) return;
       _logSeq++;
       var ts = new Date().toISOString();
       var seq = String(_logSeq).padStart(4, '0');
@@ -1732,6 +1734,7 @@
       }
     }
     function _logJSON(label, obj) {
+      if (!DEBUG_ENABLED) return;
       try { _log(label, JSON.stringify(obj, null, 2)); }
       catch (e) { _log(label, String(obj)); }
     }
