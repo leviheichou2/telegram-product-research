@@ -2104,7 +2104,7 @@
 
         }
 
-        if (state.running || chatResponse.loading) statusTimer = setTimeout(pollStatus, 1200);
+        if (state.running || chatResponse.loading) statusTimer = setTimeout(pollStatus, 5000);
 
       } catch (error) {
 
@@ -2115,9 +2115,14 @@
     }
 
     async function loadResults() {
+      // Use cached results if available
+      if (resultsCache) {
+        renderResults(resultsCache.products, resultsCache.scan, resultsCache.legacy_results_unreliable);
+        return;
+      }
 
       const response = await request("/api/results");
-
+      resultsCache = response;
       renderResults(response.products, response.scan, response.legacy_results_unreliable);
 
     }
@@ -2501,6 +2506,7 @@
     let currentScan = null;
     let currentLegacyFlag = false;
     const PAGE_SIZE = 10;
+    let resultsCache = null;
 
     function renderResults(products, scan, legacyResultsUnreliable = false) {
       allProducts = products;
@@ -2603,6 +2609,9 @@
       table.append(buildHead());
       const body = document.createElement("tbody");
 
+      // Use DocumentFragment for faster DOM manipulation
+      const fragment = document.createDocumentFragment();
+
       pageProducts.forEach((product, pageIndex) => {
         const index = start + pageIndex;
         window.__productIndex = window.__productIndex || {};
@@ -2624,46 +2633,15 @@
         cellWrap.className = "product-cell";
 
         const images = product.offers.filter((o) => o.image).map((o) => o.image);
-        if (images.length > 1) {
-          // carousel
-          const carousel = document.createElement("div");
-          carousel.className = "carousel";
-          let carouselIdx = 0;
-          const track = document.createElement("div");
-          track.className = "carousel-track";
-          const img = document.createElement("img");
-          img.className = "product-thumb";
-          img.src = images[0];
-          img.alt = `Telegram photo for ${product.product}`;
-          img.loading = "lazy";
-          track.append(img);
-          carousel.append(track);
-          const nav = document.createElement("div");
-          nav.className = "carousel-nav";
-          const prev = document.createElement("button");
-          prev.type = "button"; prev.textContent = "«"; prev.title = "Previous photo";
-          const next = document.createElement("button");
-          next.type = "button"; next.textContent = "»"; next.title = "Next photo";
-          const counter = document.createElement("span");
-          counter.className = "carousel-counter";
-          function updateCarousel() {
-            img.src = images[carouselIdx];
-            counter.textContent = `${carouselIdx + 1} / ${images.length}`;
-            prev.disabled = carouselIdx === 0;
-            next.disabled = carouselIdx === images.length - 1;
-          }
-          prev.addEventListener("click", () => { if (carouselIdx > 0) { carouselIdx--; updateCarousel(); } });
-          next.addEventListener("click", () => { if (carouselIdx < images.length - 1) { carouselIdx++; updateCarousel(); } });
-          updateCarousel();
-          nav.append(prev, counter, next);
-          carousel.append(nav);
-          cellWrap.append(carousel);
-        } else if (images.length === 1) {
+        if (images.length >= 1) {
           const image = document.createElement("img");
           image.className = "product-thumb";
           image.src = images[0];
           image.alt = `Telegram photo for ${product.product}`;
           image.loading = "lazy";
+          if (images.length > 1) {
+            image.title = `${images.length} photos available`;
+          }
           cellWrap.append(image);
         } else {
           const placeholder = document.createElement("div");
@@ -2929,9 +2907,10 @@
         else telegramCell.textContent = "No direct link available";
         row.append(telegramCell);
 
-        body.append(row);
+        fragment.append(row);
       });
 
+      body.append(fragment);
       table.append(body);
       wrapper.append(table);
       resultsEl.append(wrapper);
@@ -4412,7 +4391,7 @@
       xhr.ontimeout = function() { _log('BG_STATUS_ERR', 'status XHR timed out'); };
       xhr.timeout = 5000;
       xhr.send();
-    }, 3000);
+    }, 10000);
 
     // Log all click events on buttons for debugging
     document.addEventListener('click', function(e) {
