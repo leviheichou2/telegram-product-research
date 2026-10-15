@@ -1,0 +1,80 @@
+{
+    "name": "omnirouter",
+    "vendor": "customendpoint",
+    "apiKey": "${input:chat.lm.secret.36a6422f}",
+    "apiType": "chat-completions",
+    "models": [
+        {
+            "id": "HebunzuDoa",
+            "name": "HebunzuDoa",
+            "url": "http://localhost:20128/v1/chat/completions",
+            "toolCalling": true,
+            "vision": true,
+            "maxInputTokens": 128000,
+            "maxOutputTokens": 16000
+        },
+        {
+            "id": "auto/best-coding",
+            "name": "Best Coding",
+            "url": "http://localhost:20128/v1/chat/completions",
+            "toolCalling": true,
+            "vision": true,
+            "maxInputTokens": 128000,
+            "maxOutputTokens": 16000
+        },
+        {
+            "id": "auto/best-reasoning",
+            "name": "Best Reasoning",
+            "url": "http://localhost:20128/v1/chat/completions",
+            "toolCalling": true,
+            "vision": true,
+            "maxInputTokens": 128000,
+            "maxOutputTokens": 16000
+        },
+        {
+            "id": "auto/pro-coding",
+            "name": "Pro Coding",
+            "url": "http://localhost:20128/v1/chat/completions",
+            "toolCalling": true,
+            "vision": true,
+            "maxInputTokens": 128000,
+            "maxOutputTokens": 16000
+        },
+        {
+            "id": "auto/pro-reasoning",
+            "name": "Pro Reasoning",
+            "url": "http://localhost:20128/v1/chat/completions",
+            "toolCalling": true,
+            "vision": true,
+            "maxInputTokens": 128000,
+            "maxOutputTokens": 16000
+        },
+        {
+            "id": "auto/fast",
+            "name": "Fast",
+            "url": "http://localhost:20128/v1/chat/completions",
+            "toolCalling": true,
+            "vision": true,
+            "maxInputTokens": 128000,
+            "maxOutputTokens": 16000
+        },
+        {
+            "id": "auto/chat",
+            "name": "Chat",
+            "url": "http://localhost:20128/v1/chat/completions",
+            "toolCalling": true,
+            "vision": true,
+            "maxInputTokens": 128000,
+            "maxOutputTokens": 16000
+        },
+        {
+            "id": "auto/chaos",
+            "name": "Chaos",
+            "url": "http://localhost:20128/v1/chat/completions",
+            "toolCalling": true,
+            "vision": true,
+            "maxInputTokens": 128000,
+            "maxOutputTokens": 16000
+        }
+    ]
+}

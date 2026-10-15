@@ -1,4 +1,4 @@
-<!doctype html>
+﻿<!doctype html>
 
 <html lang="en">
 
@@ -1717,9 +1717,7 @@
 
     var _logEntries = [];
     var _logSeq = 0;
-    var DEBUG_ENABLED = false; // Set to true to enable debug logging
     function _log(kind, message) {
-      if (!DEBUG_ENABLED) return;
       _logSeq++;
       var ts = new Date().toISOString();
       var seq = String(_logSeq).padStart(4, '0');
@@ -1734,7 +1732,6 @@
       }
     }
     function _logJSON(label, obj) {
-      if (!DEBUG_ENABLED) return;
       try { _log(label, JSON.stringify(obj, null, 2)); }
       catch (e) { _log(label, String(obj)); }
     }
@@ -1761,79 +1758,92 @@
 
       }
 
-      try {
+          // Support timeout option (in milliseconds)
+          var timeout = opts.timeout || 30000; // default 30s
 
-        const fetchOpts = {
+          try {
 
-          method: method,
+            const fetchOpts = {
 
-          headers: opts.headers,
+              method: method,
 
-        };
+              headers: opts.headers,
 
-        if (opts.body !== undefined && opts.body !== null) fetchOpts.body = opts.body;
+            };
 
-        _logJSON('FETCH_OPTS', { method: fetchOpts.method, url: path, hasBody: !!fetchOpts.body, headers: opts.headers });
+            if (opts.body !== undefined && opts.body !== null) fetchOpts.body = opts.body;
 
-        const response = await fetch(path, fetchOpts);
+            _logJSON('FETCH_OPTS', { method: fetchOpts.method, url: path, hasBody: !!fetchOpts.body, headers: opts.headers });
 
-        _log('RES_STATUS', response.status + ' ' + response.statusText + ' ' + path);
+            // Create fetch promise with timeout
+            const fetchPromise = fetch(path, fetchOpts);
+            const timeoutPromise = new Promise((_, reject) =>
+              setTimeout(() => reject(new Error('Request timeout after ' + timeout + 'ms')), timeout)
+            );
 
-        const respHeaders = {};
+            const response = await Promise.race([fetchPromise, timeoutPromise]);
 
-        response.headers.forEach(function(v, k) { respHeaders[k] = v; });
+            _log('RES_STATUS', response.status + ' ' + response.statusText + ' ' + path);
 
-        _logJSON('RES_HEADERS', respHeaders);
+            const respHeaders = {};
 
-        const text = await response.text();
+            response.headers.forEach(function(v, k) { respHeaders[k] = v; });
 
-        _log('RES_BODY_RAW', text.slice(0, 1000) + (text.length > 1000 ? '\n...[truncated ' + (text.length - 1000) + ' more chars]' : ''));
+            _logJSON('RES_HEADERS', respHeaders);
 
-        let body = {};
+            const text = await response.text();
 
-        if (text.trim()) {
+            _log('RES_BODY_RAW', text.slice(0, 1000) + (text.length > 1000 ? '\n...[truncated ' + (text.length - 1000) + ' more chars]' : ''));
 
-          try { body = JSON.parse(text); _logJSON('RES_JSON', body); }
+            let body = {};
 
-          catch (e) { _log('RES_PARSE_FAIL', 'Could not parse response as JSON. Raw: ' + text.slice(0, 500)); body = { error: text.slice(0, 500) }; }
+            if (text.trim()) {
+
+              try { body = JSON.parse(text); _logJSON('RES_JSON', body); }
+
+              catch (e) { _log('RES_PARSE_FAIL', 'Could not parse response as JSON. Raw: ' + text.slice(0, 500)); body = { error: text.slice(0, 500) }; }
+
+            }
+
+            if (!response.ok) {
+
+              var errMsg = body.error != null ? String(body.error) : response.statusText || 'Request failed';
+
+              _log('ERR', 'HTTP ' + response.status + ': ' + errMsg);
+
+              var err = new Error(errMsg);
+
+              err.responseStatus = response.status;
+
+              err.responseBody = body;
+
+              throw err;
+
+            }
+
+            return body;
+
+          } catch (err) {
+
+            if (err.message && err.message.startsWith('TypeError')) {
+
+              _log('NETERR', 'Network error: ' + err.message + ' (path: ' + path + ', method: ' + method + ')');
+
+            } else if (err.message && err.message.includes('timeout')) {
+
+              _log('TIMEOUT', 'Request timeout: ' + path + ' after ' + timeout + 'ms');
+
+            } else {
+
+              _log('FATAL', 'Unhandled: ' + err.message + ' (path: ' + path + ', method: ' + method + ')');
+
+            }
+
+            throw err;
+
+          }
 
         }
-
-        if (!response.ok) {
-
-          var errMsg = body.error != null ? String(body.error) : response.statusText || 'Request failed';
-
-          _log('ERR', 'HTTP ' + response.status + ': ' + errMsg);
-
-          var err = new Error(errMsg);
-
-          err.responseStatus = response.status;
-
-          err.responseBody = body;
-
-          throw err;
-
-        }
-
-        return body;
-
-      } catch (err) {
-
-        if (err.message && err.message.startsWith('TypeError')) {
-
-          _log('NETERR', 'Network error: ' + err.message + ' (path: ' + path + ', method: ' + method + ')');
-
-        } else {
-
-          _log('FATAL', 'Unhandled: ' + err.message + ' (path: ' + path + ', method: ' + method + ')');
-
-        }
-
-        throw err;
-
-      }
-
-    }
 
     var _lastStatusMsg = '';
     var _lastStatusTime = 0;
@@ -1953,7 +1963,7 @@
 
       try {
 
-        await request("/api/chats/reload", { method: "POST", body: "{}" });
+            await request("/api/chats/reload", { method: "POST", body: "{}", timeout: 10000 });
 
         await pollStatus();
 
@@ -1971,7 +1981,7 @@
 
       try {
 
-        const state = await request("/api/status");
+            const state = await request("/api/status", { timeout: 10000 }); // 10s timeout for status
 
         let statusMessage = state.message;
 
@@ -2085,7 +2095,7 @@
 
         }
 
-        const chatResponse = await request("/api/chats");
+        const chatResponse = await request("/api/chats", { timeout: 10000 }); // 10s timeout for chats
 
         if (JSON.stringify(chatResponse.chats) !== JSON.stringify(chats)) {
 
@@ -2097,17 +2107,13 @@
 
         if (!state.running && !state.error) {
 
-          // Only load results if user is on products page
-          const currentPageEl = document.querySelector(".app-page:not([hidden])");
-          if (currentPageEl && currentPageEl.id === "page-products") {
-            await loadResults();
-          }
+          await loadResults();
 
           updateSelectionSummary();
 
         }
 
-        if (state.running || chatResponse.loading) statusTimer = setTimeout(pollStatus, 5000);
+        if (state.running || chatResponse.loading) statusTimer = setTimeout(pollStatus, 1200);
 
       } catch (error) {
 
@@ -2118,14 +2124,9 @@
     }
 
     async function loadResults() {
-      // Use cached results if available
-      if (resultsCache) {
-        renderResults(resultsCache.products, resultsCache.scan, resultsCache.legacy_results_unreliable);
-        return;
-      }
 
-      const response = await request("/api/results");
-      resultsCache = response;
+          const response = await request("/api/results", { timeout: 10000 }); // 10s timeout for results
+
       renderResults(response.products, response.scan, response.legacy_results_unreliable);
 
     }
@@ -2504,18 +2505,8 @@
 
     }
 
-    let allProducts = [];
-    let currentPage = 0;
-    let currentScan = null;
-    let currentLegacyFlag = false;
-    const PAGE_SIZE = 10;
-    let resultsCache = null;
-
     function renderResults(products, scan, legacyResultsUnreliable = false) {
-      allProducts = products;
-      currentPage = 0;
-      currentScan = scan;
-      currentLegacyFlag = legacyResultsUnreliable;
+      resultsEl.replaceChildren();
 
       const scanSummary = document.querySelector("#scan-summary");
       if (scan) {
@@ -2530,19 +2521,6 @@
       } else {
         scanSummary.textContent = "";
       }
-
-      renderPage();
-    }
-
-    function renderPage() {
-      const products = allProducts;
-      const scan = currentScan;
-      const legacyResultsUnreliable = currentLegacyFlag;
-      const start = currentPage * PAGE_SIZE;
-      const end = Math.min(start + PAGE_SIZE, products.length);
-      const pageProducts = products.slice(start, end);
-
-      resultsEl.replaceChildren();
 
       const HEADERS = [
         "#", "Product", "Supplier prices", "Competitor prices", "Meta ads",
@@ -2579,7 +2557,7 @@
         return value.length > limit ? value.slice(0, limit - 1) + "\u2026" : value;
       }
 
-      if (!allProducts.length) {
+      if (!products.length) {
         resultsEl.className = "table-wrap";
         const table = document.createElement("table");
         table.append(buildHead());
@@ -2601,7 +2579,6 @@
         body.append(tr);
         table.append(body);
         resultsEl.append(table);
-        updatePagination();
         return;
       }
 
@@ -2612,11 +2589,7 @@
       table.append(buildHead());
       const body = document.createElement("tbody");
 
-      // Use DocumentFragment for faster DOM manipulation
-      const fragment = document.createDocumentFragment();
-
-      pageProducts.forEach((product, pageIndex) => {
-        const index = start + pageIndex;
+      products.forEach((product, index) => {
         window.__productIndex = window.__productIndex || {};
         window.__productIndex[product.key] = product;
 
@@ -2636,15 +2609,46 @@
         cellWrap.className = "product-cell";
 
         const images = product.offers.filter((o) => o.image).map((o) => o.image);
-        if (images.length >= 1) {
+        if (images.length > 1) {
+          // carousel
+          const carousel = document.createElement("div");
+          carousel.className = "carousel";
+          let carouselIdx = 0;
+          const track = document.createElement("div");
+          track.className = "carousel-track";
+          const img = document.createElement("img");
+          img.className = "product-thumb";
+          img.src = images[0];
+          img.alt = `Telegram photo for ${product.product}`;
+          img.loading = "lazy";
+          track.append(img);
+          carousel.append(track);
+          const nav = document.createElement("div");
+          nav.className = "carousel-nav";
+          const prev = document.createElement("button");
+          prev.type = "button"; prev.textContent = "«"; prev.title = "Previous photo";
+          const next = document.createElement("button");
+          next.type = "button"; next.textContent = "»"; next.title = "Next photo";
+          const counter = document.createElement("span");
+          counter.className = "carousel-counter";
+          function updateCarousel() {
+            img.src = images[carouselIdx];
+            counter.textContent = `${carouselIdx + 1} / ${images.length}`;
+            prev.disabled = carouselIdx === 0;
+            next.disabled = carouselIdx === images.length - 1;
+          }
+          prev.addEventListener("click", () => { if (carouselIdx > 0) { carouselIdx--; updateCarousel(); } });
+          next.addEventListener("click", () => { if (carouselIdx < images.length - 1) { carouselIdx++; updateCarousel(); } });
+          updateCarousel();
+          nav.append(prev, counter, next);
+          carousel.append(nav);
+          cellWrap.append(carousel);
+        } else if (images.length === 1) {
           const image = document.createElement("img");
           image.className = "product-thumb";
           image.src = images[0];
           image.alt = `Telegram photo for ${product.product}`;
           image.loading = "lazy";
-          if (images.length > 1) {
-            image.title = `${images.length} photos available`;
-          }
           cellWrap.append(image);
         } else {
           const placeholder = document.createElement("div");
@@ -2910,10 +2914,9 @@
         else telegramCell.textContent = "No direct link available";
         row.append(telegramCell);
 
-        fragment.append(row);
+        body.append(row);
       });
 
-      body.append(fragment);
       table.append(body);
       wrapper.append(table);
       resultsEl.append(wrapper);
@@ -2922,41 +2925,7 @@
       warning.className = "warning";
       warning.textContent = "Google Trends and Meta Ad Library open as public research pages; their content cannot be reliably collected automatically without authorized APIs. Enter only what you actually observe. Competitor pages are read for public structured product data, and sites may block access. Supplier and competitor prices are not directly comparable unless currency, unit, shipping and tax basis match. A test-priority score is not proof of demand or profit.";
       resultsEl.append(warning);
-
-      updatePagination();
     }
-
-    function updatePagination() {
-      const resultCount = document.querySelector("#result-count");
-      const pageStatus = document.querySelector("#page-status");
-      const prevBtn = document.querySelector("#page-prev");
-      const nextBtn = document.querySelector("#page-next");
-
-      const total = allProducts.length;
-      const start = currentPage * PAGE_SIZE + 1;
-      const end = Math.min((currentPage + 1) * PAGE_SIZE, total);
-
-      resultCount.textContent = `${total} product${total !== 1 ? 's' : ''}`;
-      pageStatus.textContent = total ? `${start}–${end} of ${total}` : '0–0 of 0';
-      prevBtn.disabled = currentPage === 0;
-      nextBtn.disabled = end >= total;
-    }
-
-    document.querySelector("#page-prev").addEventListener("click", () => {
-      if (currentPage > 0) {
-        currentPage--;
-        renderPage();
-        window.scrollTo(0, document.querySelector("#products-section").offsetTop - 20);
-      }
-    });
-
-    document.querySelector("#page-next").addEventListener("click", () => {
-      if ((currentPage + 1) * PAGE_SIZE < allProducts.length) {
-        currentPage++;
-        renderPage();
-        window.scrollTo(0, document.querySelector("#products-section").offsetTop - 20);
-      }
-    });
 
     document.querySelector("#send-code").addEventListener("click", async () => {
 
@@ -3108,13 +3077,15 @@
 
             market: document.querySelector("#market").value
 
-          })
+                }),
 
-        });
+                timeout: 10000
 
-        await pollStatus();
+              });
 
-      } catch (error) {
+              await pollStatus();
+
+            } catch (error) {
 
         scanButton.disabled = false;
 
@@ -3130,7 +3101,7 @@
 
       try {
 
-        await request("/api/scan/cancel", { method: "POST", body: "{}" });
+            await request("/api/scan/cancel", { method: "POST", body: "{}", timeout: 10000 });
 
         setStatus("Stop requested. Finishing the current message and saving partial results…");
 
@@ -3146,7 +3117,91 @@
 
     });
 
-    pollStatus();
+    pollStatus();
+    // Product search, filter, and sort handlers
+    const productSearch = document.querySelector("#product-search");
+    const productFilter = document.querySelector("#product-filter");
+    const productSort = document.querySelector("#product-sort");
+
+    let currentProducts = [];
+    let currentScan = null;
+    let currentLegacyUnreliable = false;
+
+    // Store the original renderResults to wrap it
+    const originalRenderResults = renderResults;
+    renderResults = function(products, scan, legacyResultsUnreliable = false) {
+      currentProducts = products || [];
+      currentScan = scan;
+      currentLegacyUnreliable = legacyResultsUnreliable;
+      applyFiltersAndSort();
+    };
+
+    function applyFiltersAndSort() {
+      let filtered = [...currentProducts];
+
+      // Apply search filter
+      const searchTerm = productSearch ? productSearch.value.toLowerCase().trim() : "";
+      if (searchTerm) {
+        filtered = filtered.filter(p => {
+          const productName = (p.product || "").toLowerCase();
+          const supplierNames = (p.offers || []).map(o => (o.supplier || "").toLowerCase()).join(" ");
+          const description = (p.description || "").toLowerCase();
+          return productName.includes(searchTerm) || supplierNames.includes(searchTerm) || description.includes(searchTerm);
+        });
+      }
+
+      // Apply status filter
+      const filterValue = productFilter ? productFilter.value : "all";
+      if (filterValue !== "all") {
+        filtered = filtered.filter(p => {
+          if (filterValue === "identified") return !p.candidate_only && p.identification_method;
+          if (filterValue === "review") return p.candidate_only || !p.identification_method;
+          if (filterValue === "researched") return p.research_coverage && p.research_coverage > 0;
+          return true;
+        });
+      }
+
+      // Apply sort
+      const sortValue = productSort ? productSort.value : "priority";
+      filtered.sort((a, b) => {
+        if (sortValue === "priority") {
+          const scoreA = a.candidate_only ? -1 : (a.score || 0);
+          const scoreB = b.candidate_only ? -1 : (b.score || 0);
+          return scoreB - scoreA;
+        }
+        if (sortValue === "suppliers") {
+          return (b.sellers || 0) - (a.sellers || 0);
+        }
+        if (sortValue === "newest") {
+          // Sort by newest post date (would need date field)
+          return 0;
+        }
+        if (sortValue === "price") {
+          const priceA = a.lowest_price != null ? a.lowest_price : Infinity;
+          const priceB = b.lowest_price != null ? b.lowest_price : Infinity;
+          return priceA - priceB;
+        }
+        if (sortValue === "title") {
+          return (a.product || "").localeCompare(b.product || "");
+        }
+        return 0;
+      });
+
+      // Call original render with filtered/sorted products
+      originalRenderResults(filtered, currentScan, currentLegacyUnreliable);
+    }
+
+    // Add event listeners
+    if (productSearch) {
+      productSearch.addEventListener("input", applyFiltersAndSort);
+    }
+    if (productFilter) {
+      productFilter.addEventListener("change", applyFiltersAndSort);
+    }
+    if (productSort) {
+      productSort.addEventListener("change", applyFiltersAndSort);
+    }
+
 
   </script>
 
@@ -3214,7 +3269,7 @@
 
   // ---------- connection status (Telegram + Meta) ----------
   function refreshConnectionStatus() {
-    request('/api/settings').then(function (s) {
+      request('/api/settings', { timeout: 10000 }).then(function (s) {
       var tg = !!s && !!s.telegram_configured;
       var meta = !!s && !!s.meta_configured;
       if (tg) {
@@ -3281,19 +3336,20 @@
     setStatusText('Saving...');
     request('/api/settings', {
       method: 'POST',
-      body: JSON.stringify({ telegram_api_id: apiId, telegram_api_hash: apiHash })
-    }).then(function () {
-      setStatusText('Saved. Telegram credentials are stored locally.');
-      if (telegramApiIdInput) telegramApiIdInput.value = '';
-      if (telegramApiHashInput) telegramApiHashInput.value = '';
-      refreshConnectionStatus();
-      setTimeout(closeTelegramConnect, 900);
-    }).catch(function (err) {
-      setStatusText(String(err && err.message || err), true);
-    }).then(function () {
-      if (saveTelegramCredsBtn) saveTelegramCredsBtn.disabled = false;
-    });
-  }
+        body: JSON.stringify({ telegram_api_id: apiId, telegram_api_hash: apiHash }),
+        timeout: 10000
+      }).then(function () {
+        setStatusText('Saved. Telegram credentials are stored locally.');
+        if (telegramApiIdInput) telegramApiIdInput.value = '';
+        if (telegramApiHashInput) telegramApiHashInput.value = '';
+        refreshConnectionStatus();
+        setTimeout(closeTelegramConnect, 900);
+      }).catch(function (err) {
+        setStatusText(String(err && err.message || err), true);
+      }).then(function () {
+        if (saveTelegramCredsBtn) saveTelegramCredsBtn.disabled = false;
+      });
+    }
 
   // ---------- Meta Ad Library panel ----------
   function openMetaPanel() {
@@ -3313,7 +3369,7 @@
   function testMetaConnection() {
     if (metaTestBtn) metaTestBtn.disabled = true;
     setMetaLog('Testing Meta Ad Library...');
-    request('/api/meta-ads/test', { method: 'POST', body: JSON.stringify({}) })
+      request('/api/meta-ads/test', { method: 'POST', body: JSON.stringify({}), timeout: 10000 })
       .then(function (r) {
         var msg = (r && r.message) || ('Matching ads: ' + (r && r.matching_ads));
         setMetaLog(msg || 'Connection OK.');
@@ -3330,7 +3386,7 @@
   function diagnoseMeta() {
     if (metaDiagnoseBtn) metaDiagnoseBtn.disabled = true;
     setMetaLog('Diagnosing...');
-    request('/api/meta-ads/diagnose', { method: 'POST', body: JSON.stringify({}) })
+      request('/api/meta-ads/diagnose', { method: 'POST', body: JSON.stringify({}), timeout: 10000 })
       .then(function (r) {
         var parts = [];
         if (r && r.category) parts.push('[' + r.category + ']');
@@ -3353,7 +3409,7 @@
     if (!code) return;
     if (metaSaveCountryBtn) metaSaveCountryBtn.disabled = true;
     setMetaLog('Saving country...');
-    request('/api/settings', { method: 'POST', body: JSON.stringify({ meta_ad_country: code }) })
+      request('/api/settings', { method: 'POST', body: JSON.stringify({ meta_ad_country: code }), timeout: 10000 })
       .then(function () {
         setMetaLog('Saved. Ad Library country is now ' + code + '.');
         refreshConnectionStatus();
@@ -3369,7 +3425,7 @@
   // ---------- wiring ----------
   var btnRefreshTelegram = document.getElementById('btn-refresh-telegram');
   function refreshTelegram() {
-    request("/api/chats/reload", { method: "POST", body: JSON.stringify({}) })
+      request("/api/chats/reload", { method: "POST", body: JSON.stringify({}), timeout: 10000 })
       .then(function () { setStatusText('Telegram chats reloading...'); })
       .catch(function (err) { setStatusText(String(err && err.message || err), true); });
   }
@@ -3478,7 +3534,7 @@
   }
 
   function loadScans() {
-    request('/api/scans').then(function (r) {
+      request('/api/scans', { timeout: 10000 }).then(function (r) {
       if (statusEl) statusEl.textContent = '';
       renderScans(r && r.scans);
     }).catch(function (err) {
@@ -3488,7 +3544,7 @@
 
   function selectScan(scanId) {
     if (!scanId) return;
-    request('/api/scans/select', { method: 'POST', body: JSON.stringify({ scan_id: scanId }) })
+      request('/api/scans/select', { method: 'POST', body: JSON.stringify({ scan_id: scanId }), timeout: 10000 })
       .then(function () {
         setStatus('Loaded saved scan: ' + scanId.slice(0, 12) + '…');
         loadResults();
@@ -3525,7 +3581,7 @@
 
   function deleteScan(scanId) {
     if (!confirm('Delete this saved scan and all its results?')) return;
-    request('/api/scans/delete', { method: 'POST', body: JSON.stringify({ scan_id: scanId }) })
+      request('/api/scans/delete', { method: 'POST', body: JSON.stringify({ scan_id: scanId }), timeout: 10000 })
       .then(function () {
         if (statusEl) statusEl.textContent = 'Deleted saved scan.';
         loadScans();
@@ -3536,7 +3592,7 @@
   }
 
   function rerunScan(scanId) {
-    request('/api/scans/rerun', { method: 'POST', body: JSON.stringify({ scan_id: scanId }) })
+      request('/api/scans/rerun', { method: 'POST', body: JSON.stringify({ scan_id: scanId }), timeout: 10000 })
       .then(function () {
         if (statusEl) statusEl.textContent = 'Rerunning saved scan…';
       })
@@ -3638,7 +3694,6 @@
   function onPageShown(name) {
     if (name === "products" && !loaded.products) {
       loaded.products = true;
-      loadResults();
     }
     if (name === "reports" && !loaded.reports) {
       loaded.reports = true;
@@ -3992,8 +4047,8 @@
 
   function refreshProfile() {
     if (!currentKey) return;
-    status("Loading profile\u2026");
-    request("/api/product?key=" + encodeURIComponent(currentKey))
+      status("Loading profile…");
+      request("/api/product?key=" + encodeURIComponent(currentKey), { timeout: 10000 })
       .then(function (r) {
         var p = r && r.product;
         if (p) {
@@ -4008,8 +4063,8 @@
 
   function profilePost(path, label) {
     if (!currentKey) { status("Open a product first.", true); return; }
-    status(label + "\u2026");
-    request(path, { method: "POST", body: JSON.stringify({ product_key: currentKey }) })
+      status(label + "…");
+      request(path, { method: "POST", body: JSON.stringify({ product_key: currentKey }), timeout: 10000 })
       .then(function (r) { status(label + " done.\n" + JSON.stringify(r, null, 2)); refreshProfile(); })
       .catch(function (err) { status((err && err.message) || err, true); });
   }
@@ -4017,8 +4072,8 @@
   function loadSimilarSellers() {
     if (!currentKey) { status("Open a product first.", true); return; }
     var box = el("profile-sellers");
-    if (box) box.textContent = "Checking\u2026";
-    request("/api/product/similar-sellers?key=" + encodeURIComponent(currentKey))
+      if (box) box.textContent = "Checking…";
+      request("/api/product/similar-sellers?key=" + encodeURIComponent(currentKey), { timeout: 10000 })
       .then(function (r) {
         if (!box) return;
         var frag = document.createDocumentFragment();
@@ -4045,8 +4100,8 @@
   function loadImageProduct() {
     if (!currentKey) { status("Open a product first.", true); return; }
     var box = el("profile-images");
-    if (box) box.textContent = "Loading\u2026";
-    request("/api/image-product?key=" + encodeURIComponent(currentKey))
+      if (box) box.textContent = "Loading…";
+      request("/api/image-product?key=" + encodeURIComponent(currentKey), { timeout: 10000 })
       .then(function (r) { renderOffers(r && r.offers); })
       .catch(function (err) { if (box) box.textContent = String((err && err.message) || err); });
   }
@@ -4060,16 +4115,16 @@
     var input = el("profile-name-input");
     var name = input && input.value ? input.value.trim() : "";
     if (!name) { status("Enter a name for the product.", true); return; }
-    status("Saving name\u2026");
-    request("/api/products/identify", { method: "POST", body: JSON.stringify({ product_key: currentKey, name: name }) })
+      status("Saving name…");
+      request("/api/products/identify", { method: "POST", body: JSON.stringify({ product_key: currentKey, name: name }), timeout: 10000 })
       .then(function (r) { status("Name saved.\n" + JSON.stringify(r, null, 2)); refreshProfile(); })
       .catch(function (err) { status((err && err.message) || err, true); });
   }
 
   function identifyFromImage() {
     if (!currentKey) { status("Open a product first.", true); return; }
-    status("Identifying from the product photo\u2026");
-    request("/api/products/identify-from-image", { method: "POST", body: JSON.stringify({ product_key: currentKey, save: false }) })
+      status("Identifying from the product photo…");
+      request("/api/products/identify-from-image", { method: "POST", body: JSON.stringify({ product_key: currentKey, save: false }), timeout: 10000 })
       .then(function (r) { status("Identification result:\n" + JSON.stringify(r, null, 2)); refreshProfile(); })
       .catch(function (err) { status((err && err.message) || err, true); });
   }
@@ -4102,8 +4157,8 @@
 
   function loadChats() {
     var list = el("mp-chat-list");
-    if (list) list.textContent = "Loading Telegram channels\u2026";
-    request("/api/chats")
+      if (list) list.textContent = "Loading Telegram channels…";
+      request("/api/chats", { timeout: 10000 })
       .then(function (r) { renderChats(r && r.chats); })
       .catch(function (err) { if (list) list.textContent = String((err && err.message) || err); });
   }
@@ -4154,8 +4209,8 @@
 
   // ============================ reports ============================
   function cancelOperation() {
-    mpOut("mp-export-out", "Requesting cancellation\u2026");
-    request("/api/operations/cancel", { method: "POST", body: JSON.stringify({}) })
+      mpOut("mp-export-out", "Requesting cancellation…");
+      request("/api/operations/cancel", { method: "POST", body: JSON.stringify({}), timeout: 10000 })
       .then(function (r) { mpOut("mp-export-out", JSON.stringify(r, null, 2)); })
       .catch(function (err) { mpOut("mp-export-out", (err && err.message) || err, true); });
   }
@@ -4192,14 +4247,14 @@
   on("mp-image-refresh-chats", loadChats);
   on("mp-image-search", imageSearch);
   on("mp-image-resume", function () {
-    mpOut("mp-image-out", "Resuming image indexing\u2026");
-    request("/api/image-search/resume", { method: "POST", body: JSON.stringify({}) })
+      mpOut("mp-image-out", "Resuming image indexing…");
+      request("/api/image-search/resume", { method: "POST", body: JSON.stringify({}), timeout: 10000 })
       .then(function (r) { mpOut("mp-image-out", JSON.stringify(r, null, 2)); })
       .catch(function (err) { mpOut("mp-image-out", (err && err.message) || err, true); });
   });
   on("mp-image-status", function () {
-    mpOut("mp-image-out", "Checking image-search status\u2026");
-    request("/api/image-search/status")
+      mpOut("mp-image-out", "Checking image-search status…");
+      request("/api/image-search/status", { timeout: 10000 })
       .then(function (r) { mpOut("mp-image-out", JSON.stringify(r, null, 2)); })
       .catch(function (err) { mpOut("mp-image-out", (err && err.message) || err, true); });
   });
@@ -4394,7 +4449,7 @@
       xhr.ontimeout = function() { _log('BG_STATUS_ERR', 'status XHR timed out'); };
       xhr.timeout = 5000;
       xhr.send();
-    }, 10000);
+    }, 3000);
 
     // Log all click events on buttons for debugging
     document.addEventListener('click', function(e) {
@@ -4425,3 +4480,10 @@
 </body>
 
 </html>
+
+
+
+
+
+
+
