@@ -7,6 +7,7 @@ const definition: AgentDefinition = {
   model: 'google/gemini-3.8-flash',
   reasoningOptions: { enabled: true, effort: 'low' },
   providerOptions: { allow_fallbacks: true, sort: 'price' },
+  toolNames: ['spawn_agents'],
   instructionsPrompt: `
 You are Free Buffy Researcher — a free-tier research subagent.
 

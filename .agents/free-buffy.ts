@@ -7,6 +7,7 @@ const definition: AgentDefinition = {
   model: 'deepseek/deepseek-v4-flash',
   reasoningOptions: { enabled: true, effort: 'low' },
   providerOptions: { allow_fallbacks: true, sort: 'price' },
+  toolNames: ['spawn_agents'],
   instructionsPrompt: `
 You are Free Buffy — a free, fast, and able coding agent.
 

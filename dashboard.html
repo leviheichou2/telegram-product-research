@@ -82,7 +82,7 @@
 
     .workspace { min-width: 0; }
 
-    .topbar { min-height: 57px; display: flex; align-items: center; justify-content: space-between; gap: 15px; padding: 0 25px; border-bottom: 1px solid var(--line); background: #fff; }
+    .topbar { min-height: 57px; display: flex; align-items: center; justify-content: flex-end; gap: 15px; padding: 0 25px; border-bottom: 1px solid var(--line); background: #fff; }
 
     .top-nav { display: flex; align-items: center; gap: 26px; height: 57px; }
 
@@ -517,6 +517,7 @@
     backdrop-filter: saturate(160%) blur(8px);
     border-bottom: 1px solid var(--border);
     box-shadow: var(--sh-1);
+    justify-content: flex-end;
   }
   .top-nav { gap: 30px; height: 60px; }
   .top-nav a {
@@ -2105,11 +2106,9 @@
 
         }
 
-        if (!state.running && !state.error) {
+        if (!state.running && !state.error && !resultsLoaded) {
 
-          await loadResults();
-
-          updateSelectionSummary();
+          resultsLoaded = true;
 
         }
 
@@ -2557,39 +2556,101 @@
         return value.length > limit ? value.slice(0, limit - 1) + "\u2026" : value;
       }
 
-      if (!products.length) {
-        resultsEl.className = "table-wrap";
-        const table = document.createElement("table");
-        table.append(buildHead());
-        const body = document.createElement("tbody");
-        const tr = document.createElement("tr");
-        const td = document.createElement("td");
-        td.colSpan = HEADERS.length;
-        td.className = "empty";
-        td.textContent = legacyResultsUnreliable
-          ? "These old results are hidden because the previous extractor produced unreliable product-name fragments. Run a fresh scan; Arabic product posts will be listed for review with their original message and photo instead of a guessed name."
-          : !scan
-            ? "No scan has finished yet. Choose a few chats and a short date range to try it."
-            : scan.status === "cancelled"
-              ? `The scan was stopped after checking ${scan.scanned_messages} messages. Product results collected before stopping are shown here if any were found.`
-              : scan.status === "failed"
-                ? "The last scan failed. Check the status message above, then retry with a smaller number of chats or a shorter date range."
-                : "The scan completed, but no posts matched the current extraction rules. Try more chats or a different date range.";
-        tr.append(td);
-        body.append(tr);
-        table.append(body);
-        resultsEl.append(table);
-        return;
-      }
+      // Pagination: show 10 products per page
+  const PRODUCTS_PER_PAGE = 10;
+  let currentPage = 1;
+  let allProducts = products || [];
 
-      resultsEl.className = "";
-      const wrapper = document.createElement("div");
-      wrapper.className = "table-wrap";
-      const table = document.createElement("table");
-      table.append(buildHead());
-      const body = document.createElement("tbody");
+  function buildHead() {
+    const head = document.createElement("thead");
+    const row = document.createElement("tr");
+    HEADERS.forEach((title) => {
+      const th = document.createElement("th");
+      th.textContent = title;
+      row.append(th);
+    });
+    head.append(row);
+    return head;
+  }
 
-      products.forEach((product, index) => {
+  function scoreClass(score) {
+    if (score == null) return "low";
+    if (score >= 70) return "good";
+    if (score >= 45) return "mid";
+    return "low";
+  }
+
+  function priceText(offer) {
+    if (offer.price == null) return null;
+    const head = `${offer.currency || ""} ${offer.price}`.trim();
+    return offer.price_unit ? `${head} / ${offer.price_unit}` : head;
+  }
+
+  function shortText(text, limit) {
+    const value = (text == null ? "" : String(text)).replace(/\s+/g, " ").trim();
+    return value.length > limit ? value.slice(0, limit - 1) + "\u2026" : value;
+  }
+
+  // Calculate total pages
+  const totalPages = Math.max(1, Math.ceil(allProducts.length / PRODUCTS_PER_PAGE));
+
+  // Get products for current page (first page by default)
+  const pageProducts = allProducts.slice((currentPage - 1) * PRODUCTS_PER_PAGE, currentPage * PRODUCTS_PER_PAGE);
+
+  // If no products on current page but we have total products, show empty state
+  if (!pageProducts.length && allProducts.length > 0) {
+    resultsEl.className = "table-wrap";
+    const table = document.createElement("table");
+    table.append(buildHead());
+    const body = document.createElement("tbody");
+    const tr = document.createElement("tr");
+    const td = document.createElement("td");
+    td.colSpan = HEADERS.length;
+    td.className = "empty";
+    td.textContent = "No products found on the current page.";
+    tr.append(td);
+    body.append(tr);
+    table.append(body);
+    resultsEl.append(table);
+    // Add pagination controls
+    addPaginationControls(totalPages);
+    return;
+  }
+
+  if (!allProducts.length) {
+    resultsEl.className = "table-wrap";
+    const table = document.createElement("table");
+    table.append(buildHead());
+    const body = document.createElement("tbody");
+    const tr = document.createElement("tr");
+    const td = document.createElement("td");
+    td.colSpan = HEADERS.length;
+    td.className = "empty";
+    td.textContent = !scan
+      ? "No scan has finished yet. Choose a few chats and a short date range to try it."
+      : scan.status === "cancelled"
+        ? `The scan was stopped after checking ${scan.scanned_messages} messages. Product results collected before stopping are shown here if any were found.`
+        : scan.status === "failed"
+          ? "The last scan failed. Check the status message above, then retry with a smaller number of chats or a shorter date range."
+          : "The scan completed, but no posts matched the current extraction rules. Try more chats or a different date range.";
+    tr.append(td);
+    body.append(tr);
+    table.append(body);
+    resultsEl.append(table);
+    // Hide pager if no products
+    const existingPager = document.querySelector(".pager");
+    if (existingPager) existingPager.remove();
+    return;
+  }
+
+  resultsEl.className = "";
+  const wrapper = document.createElement("div");
+  wrapper.className = "table-wrap";
+  const table = document.createElement("table");
+  table.append(buildHead());
+  const body = document.createElement("tbody");
+
+  pageProducts.forEach((product, index) => {
         window.__productIndex = window.__productIndex || {};
         window.__productIndex[product.key] = product;
 
@@ -3117,13 +3178,13 @@
 
     });
 
-    pollStatus();
-    // Product search, filter, and sort handlers
+        // Product search, filter, and sort handlers
     const productSearch = document.querySelector("#product-search");
     const productFilter = document.querySelector("#product-filter");
     const productSort = document.querySelector("#product-sort");
 
     let currentProducts = [];
+    let currentPage = 1;
     let currentScan = null;
     let currentLegacyUnreliable = false;
 
@@ -3131,10 +3192,80 @@
     const originalRenderResults = renderResults;
     renderResults = function(products, scan, legacyResultsUnreliable = false) {
       currentProducts = products || [];
+      currentPage = 1;
       currentScan = scan;
       currentLegacyUnreliable = legacyResultsUnreliable;
       applyFiltersAndSort();
     };
+
+    function addPaginationControls(totalPages) {
+      // Remove existing pager if present
+      const existingPager = document.querySelector(".pager");
+      if (existingPager) existingPager.remove();
+
+  const pager = document.createElement("div");
+  pager.className = "pager";
+  pager.style.display = "flex";
+  pager.style.alignItems = "center";
+  pager.style.gap = "5px";
+  pager.style.justifyContent = "flex-end";
+
+  const prevBtn = document.createElement("button");
+  prevBtn.id = "page-prev";
+  prevBtn.type = "button";
+  prevBtn.setAttribute("aria-label", "Previous page");
+  prevBtn.textContent = "‹";
+  prevBtn.style.padding = "6px 9px";
+  prevBtn.style.color = "#4e6075";
+  prevBtn.style.background = "#fff";
+  prevBtn.style.borderColor = "var(--line)";
+  prevBtn.disabled = currentPage === 1;
+
+  const pageStatus = document.createElement("span");
+  pageStatus.id = "page-status";
+  pageStatus.className = "page-status";
+  pageStatus.textContent = `1–${Math.min(PRODUCTS_PER_PAGE, allProducts.length)} of ${allProducts.length}`;
+  pageStatus.style.color = "#66758a";
+  pageStatus.style.fontSize = "12px";
+  pageStatus.style.whiteSpace = "nowrap";
+
+  const nextBtn = document.createElement("button");
+  nextBtn.id = "page-next";
+  nextBtn.type = "button";
+  nextBtn.setAttribute("aria-label", "Next page");
+  nextBtn.textContent = "›";
+  nextBtn.style.padding = "6px 9px";
+  nextBtn.style.color = "#4e6075";
+  nextBtn.style.background = "#fff";
+  nextBtn.style.borderColor = "var(--line)";
+  nextBtn.disabled = currentPage >= totalPages;
+
+  prevBtn.addEventListener("click", () => {
+    if (currentPage > 1) {
+      currentPage--;
+      renderResults(allProducts, currentScan, currentLegacyUnreliable);
+    }
+  });
+
+  nextBtn.addEventListener("click", () => {
+    if (currentPage < totalPages) {
+      currentPage++;
+      renderResults(allProducts, currentScan, currentLegacyUnreliable);
+    }
+  });
+
+  pager.append(prevBtn, pageStatus, nextBtn);
+  // Insert pager after the table wrapper
+  const tableWrap = resultsEl.querySelector(".table-wrap");
+  if (tableWrap) {
+    resultsEl.insertBefore(pager, tableWrap.nextSibling);
+  } else {
+    resultsEl.append(pager);
+  }
+}
+
+    function applyFiltersAndSort() {
+      let filtered = [...currentProducts];    };
 
     function applyFiltersAndSort() {
       let filtered = [...currentProducts];
@@ -3694,16 +3825,26 @@
   function onPageShown(name) {
     if (name === "products" && !loaded.products) {
       loaded.products = true;
+        // Start polling when products page is first shown
+        if (!window.__pollStarted) {
+          window.__pollStarted = true;
+          pollStatus();
+        }
+      }
+      if (name === "reports" && !loaded.reports) {
+        loaded.reports = true;
+        if (window.__loadScans) window.__loadScans();
+      }
+      if (name === "image" && !loaded.image) {
+        loaded.image = true;
+        loadChats();
+        // Also start polling for image page
+        if (!window.__pollStarted) {
+          window.__pollStarted = true;
+          pollStatus();
+        }
+      }
     }
-    if (name === "reports" && !loaded.reports) {
-      loaded.reports = true;
-      if (window.__loadScans) window.__loadScans();
-    }
-    if (name === "image" && !loaded.image) {
-      loaded.image = true;
-      loadChats();
-    }
-  }
 
   function showPage(name) {
     var pages = document.querySelectorAll(".app-page");

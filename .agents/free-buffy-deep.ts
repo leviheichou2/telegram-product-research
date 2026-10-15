@@ -7,6 +7,7 @@ const definition: AgentDefinition = {
   model: 'deepseek/deepseek-v4-pro',
   reasoningOptions: { enabled: true, effort: 'high' },
   providerOptions: { allow_fallbacks: true, sort: 'price' },
+  toolNames: ['spawn_agents'],
   instructionsPrompt: `
 You are Free Buffy in DEEP MODE.
 

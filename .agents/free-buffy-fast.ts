@@ -7,6 +7,7 @@ const definition: AgentDefinition = {
   model: 'deepseek/deepseek-v4-flash',
   reasoningOptions: { enabled: true, effort: 'minimal' },
   providerOptions: { allow_fallbacks: true, sort: 'price' },
+  toolNames: ['spawn_agents'],
   instructionsPrompt: `
 You are Free Buffy in FAST MODE.
 
