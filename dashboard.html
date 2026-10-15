@@ -1696,6 +1696,8 @@
 
     let chatListInitialized = false;
 
+        let resultsLoaded = false;
+
 
 
     function isoDate(date) {
@@ -2109,8 +2111,9 @@
         if (!state.running && !state.error && !resultsLoaded) {
 
           resultsLoaded = true;
+                  await loadResults();
 
-        }
+                }
 
         if (state.running || chatResponse.loading) statusTimer = setTimeout(pollStatus, 1200);
 
@@ -3120,7 +3123,8 @@
 
       if (!confirmed) return;
 
-      scanButton.disabled = true;
+            resultsLoaded = false;
+            scanButton.disabled = true;
 
       try {
 
@@ -3262,13 +3266,10 @@
   } else {
     resultsEl.append(pager);
   }
-}
+  }
 
-    function applyFiltersAndSort() {
-      let filtered = [...currentProducts];    };
-
-    function applyFiltersAndSort() {
-      let filtered = [...currentProducts];
+      function applyFiltersAndSort() {
+        let filtered = [...currentProducts];
 
       // Apply search filter
       const searchTerm = productSearch ? productSearch.value.toLowerCase().trim() : "";
