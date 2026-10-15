@@ -2175,79 +2175,93 @@
 
       details.append(summary);
 
-      for (const offer of offers) {
+          const fragment = document.createDocumentFragment();
 
-        const item = document.createElement("div");
+          for (const offer of offers) {
 
-        item.className = "offer-item";
+            const item = document.createElement("div");
 
-        const supplier = document.createElement("strong");
+            item.className = "offer-item";
 
-        supplier.textContent = offer.supplier;
+            const supplier = document.createElement("strong");
 
-        item.append(supplier);
+            supplier.textContent = offer.supplier;
 
-        [
+            item.append(supplier);
 
-          `Chat: ${offer.channel}`,
+            const lines = [
 
-          offer.price == null ? "Price: not detected" : `Listed price: ${offer.currency || ""} ${offer.price}${offer.price_unit ? ` per ${offer.price_unit}` : " (unit not detected)"}`,
+              `Chat: ${offer.channel}`,
 
-          `MOQ: ${offer.moq || "not detected"}`,
+              offer.price == null ? "Price: not detected" : `Listed price: ${offer.currency || ""} ${offer.price}${offer.price_unit ? ` per ${offer.price_unit}` : " (unit not detected)"}`,
 
-          `Size: ${offer.size || "not detected"}`,
+              `MOQ: ${offer.moq || "not detected"}`,
 
-          `Views: ${offer.views == null ? "not shown" : offer.views}`,
+              `Size: ${offer.size || "not detected"}`,
 
-          `Forwards: ${offer.forwards == null ? "not shown" : offer.forwards}`,
+              `Views: ${offer.views == null ? "not shown" : offer.views}`,
 
-          `Posted: ${offer.date ? new Date(offer.date).toLocaleString() : "unknown"}`
+              `Forwards: ${offer.forwards == null ? "not shown" : offer.forwards}`,
 
-        ].forEach((text) => {
+              `Posted: ${offer.date ? new Date(offer.date).toLocaleString() : "unknown"}`
 
-          const line = document.createElement("p");
+            ];
 
-          line.textContent = text;
+            const linesContainer = document.createElement("div");
 
-          item.append(line);
+            linesContainer.className = "offer-lines";
 
-        });
+            lines.forEach((text) => {
 
-        if (offer.image) {
+              const line = document.createElement("p");
 
-          const image = document.createElement("img");
+              line.textContent = text;
 
-          image.src = offer.image;
+              linesContainer.append(line);
 
-          image.alt = `Photo for ${product}`;
+            });
 
-          item.append(image);
+            item.append(linesContainer);
+
+            if (offer.image) {
+
+              const image = document.createElement("img");
+
+              image.src = offer.image;
+
+              image.alt = `Photo for ${product}`;
+
+              image.loading = "lazy";
+
+              item.append(image);
+
+            }
+
+            if (offer.telegram_url) item.append(makeLink("Open original Telegram post", offer.telegram_url));
+
+            const message = document.createElement("details");
+
+            const messageSummary = document.createElement("summary");
+
+            messageSummary.textContent = "Full post text";
+
+            const excerpt = document.createElement("p");
+
+            excerpt.textContent = offer.message;
+
+            message.append(messageSummary, excerpt);
+
+            item.append(message);
+
+            fragment.append(item);
+
+          }
+
+          details.append(fragment);
+
+          return details;
 
         }
-
-        if (offer.telegram_url) item.append(makeLink("Open original Telegram post", offer.telegram_url));
-
-        const message = document.createElement("details");
-
-        const messageSummary = document.createElement("summary");
-
-        messageSummary.textContent = "Full post text";
-
-        const excerpt = document.createElement("p");
-
-        excerpt.textContent = offer.message;
-
-        message.append(messageSummary, excerpt);
-
-        item.append(message);
-
-        details.append(item);
-
-      }
-
-      return details;
-
-    }
 
     function field(labelText, type, value, attributes = {}) {
 
@@ -2653,7 +2667,10 @@
   table.append(buildHead());
   const body = document.createElement("tbody");
 
-  pageProducts.forEach((product, index) => {
+    // Use DocumentFragment for batch DOM insertion
+    const fragment = document.createDocumentFragment();
+
+    pageProducts.forEach((product, index) => {
         window.__productIndex = window.__productIndex || {};
         window.__productIndex[product.key] = product;
 
@@ -2791,65 +2808,69 @@
         const supplierCell = document.createElement("td");
         const priceList = document.createElement("div");
         priceList.className = "price-list";
-        for (const offer of product.offers) {
-          const item = document.createElement("div");
-          item.className = "price-row";
-          const supplier = document.createElement("span");
-          supplier.className = "price-supplier";
-          supplier.textContent = offer.supplier || "Unknown supplier";
-          supplier.title = offer.supplier || "";
-          const value = document.createElement("span");
-          const text = priceText(offer);
-          if (text) {
-            value.className = "price-value";
-            value.textContent = text;
-          } else {
-            value.className = "price-value none";
-            value.textContent = "no price detected";
-          }
-          item.append(supplier, value);
-          priceList.append(item);
-        }
-        if (!product.offers.length) {
-          const none = document.createElement("span");
-          none.className = "empty-cell";
-          none.textContent = "No supplier offers";
-          priceList.append(none);
-        }
-        supplierCell.append(priceList);
-        row.append(supplierCell);
+                const supplierFragment = document.createDocumentFragment();
+                for (const offer of product.offers) {
+                  const item = document.createElement("div");
+                  item.className = "price-row";
+                  const supplier = document.createElement("span");
+                  supplier.className = "price-supplier";
+                  supplier.textContent = offer.supplier || "Unknown supplier";
+                  supplier.title = offer.supplier || "";
+                  const value = document.createElement("span");
+                  const text = priceText(offer);
+                  if (text) {
+                    value.className = "price-value";
+                    value.textContent = text;
+                  } else {
+                    value.className = "price-value none";
+                    value.textContent = "no price detected";
+                  }
+                  item.append(supplier, value);
+                  supplierFragment.append(item);
+                }
+                if (!product.offers.length) {
+                  const none = document.createElement("span");
+                  none.className = "empty-cell";
+                  none.textContent = "No supplier offers";
+                  supplierFragment.append(none);
+                }
+                priceList.append(supplierFragment);
+                supplierCell.append(priceList);
+                row.append(supplierCell);
 
         // ---- Competitor prices ----
         const competitorCell = document.createElement("td");
         const competitorList = document.createElement("div");
         competitorList.className = "competitor-list";
-        for (const listing of product.competitor_listings || []) {
-          const item = document.createElement("div");
-          item.className = "competitor-item";
-          const title = document.createElement("span");
-          title.className = "title";
-          title.textContent = listing.title || "Competitor listing";
-          const meta = document.createElement("span");
-          if (listing.status === "ok") {
-            meta.className = "price-tag";
-            meta.textContent = listing.price == null
-              ? "price not exposed"
-              : `${listing.currency || ""} ${listing.price}`.trim();
-          } else {
-            meta.className = "pill low";
-            meta.textContent = listing.status || "unavailable";
-          }
-          item.append(title, meta);
-          competitorList.append(item);
-        }
-        if (!(product.competitor_listings || []).length) {
-          const none = document.createElement("span");
-          none.className = "empty-cell";
-          none.textContent = "No competitor listings";
-          competitorList.append(none);
-        }
-        competitorCell.append(competitorList);
-        row.append(competitorCell);
+                const competitorFragment = document.createDocumentFragment();
+                for (const listing of product.competitor_listings || []) {
+                  const item = document.createElement("div");
+                  item.className = "competitor-item";
+                  const title = document.createElement("span");
+                  title.className = "title";
+                  title.textContent = listing.title || "Competitor listing";
+                  const meta = document.createElement("span");
+                  if (listing.status === "ok") {
+                    meta.className = "price-tag";
+                    meta.textContent = listing.price == null
+                      ? "price not exposed"
+                      : `${listing.currency || ""} ${listing.price}`.trim();
+                  } else {
+                    meta.className = "pill low";
+                    meta.textContent = listing.status || "unavailable";
+                  }
+                  item.append(title, meta);
+                  competitorFragment.append(item);
+                }
+                if (!(product.competitor_listings || []).length) {
+                  const none = document.createElement("span");
+                  none.className = "empty-cell";
+                  none.textContent = "No competitor listings";
+                  competitorFragment.append(none);
+                }
+                competitorList.append(competitorFragment);
+                competitorCell.append(competitorList);
+                row.append(competitorCell);
 
         // ---- Meta ads ----
         const metaCell = document.createElement("td");
@@ -2906,16 +2927,20 @@
         engageCell.append(views, viewsLabel);
         const stats = document.createElement("div");
         stats.className = "stat-chips";
-        [["reactions", product.total_reactions], ["comments", product.total_comments], ["forwards", product.total_forwards]]
-          .filter(([, value]) => value != null)
-          .forEach(([label, value]) => {
-            const chip = document.createElement("span");
-            chip.className = "stat-chip";
-            chip.textContent = `${value} ${label}`;
-            stats.append(chip);
-          });
-        if (stats.childNodes.length) engageCell.append(stats);
-        row.append(engageCell);
+                const statsFragment = document.createDocumentFragment();
+                [["reactions", product.total_reactions], ["comments", product.total_comments], ["forwards", product.total_forwards]]
+                  .filter(([, value]) => value != null)
+                  .forEach(([label, value]) => {
+                    const chip = document.createElement("span");
+                    chip.className = "stat-chip";
+                    chip.textContent = `${value} ${label}`;
+                    statsFragment.append(chip);
+                  });
+                if (statsFragment.childNodes.length) {
+                  stats.append(statsFragment);
+                  engageCell.append(stats);
+                }
+                row.append(engageCell);
 
         // ---- Priority ----
         const scoreCell = document.createElement("td");
@@ -2978,10 +3003,11 @@
         else telegramCell.textContent = "No direct link available";
         row.append(telegramCell);
 
-        body.append(row);
+                fragment.append(row);
       });
 
-      table.append(body);
+              body.append(fragment);
+              table.append(body);
       wrapper.append(table);
       resultsEl.append(wrapper);
 
