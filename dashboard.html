@@ -2122,9 +2122,15 @@
 
         if (state.running || state.error) {
 
-          resultsEnabled = false;        } else if (!resultsLoaded) {
+          resultsEnabled = false;
+
+        } else if (!resultsLoaded) {
 
           resultsLoaded = true;
+
+          await loadResults();
+
+        };
 
           await loadResults();
 
@@ -2339,11 +2345,15 @@
 
         if (state.running || state.error) {
 
-          resultsEnabled = false;        } else if (!resultsLoaded) {
+          resultsEnabled = false;
+
+        } else if (!resultsLoaded) {
 
           resultsLoaded = true;
 
           await loadResults();
+
+        }
 
         }
 
