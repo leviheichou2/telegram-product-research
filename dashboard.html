@@ -1720,11 +1720,20 @@
 
     var _logEntries = [];
     var _logSeq = 0;
+    // Debug logging stays off: logging every request (and pretty-printing whole API
+    // payloads) freezes the page for seconds. Set true only while diagnosing.
+    var DEBUG_ENABLED = false;
+    var LOG_TEXT_LIMIT = 4000;
     function _log(kind, message) {
+      if (!DEBUG_ENABLED) return;
       _logSeq++;
       var ts = new Date().toISOString();
       var seq = String(_logSeq).padStart(4, '0');
-      var line = ts + ' #' + seq + ' [' + kind.padEnd(6, ' ') + '] ' + String(message == null ? '' : message);
+      var text = String(message == null ? '' : message);
+      if (text.length > LOG_TEXT_LIMIT) {
+        text = text.slice(0, LOG_TEXT_LIMIT) + ' ...[+' + (text.length - LOG_TEXT_LIMIT) + ' chars]';
+      }
+      var line = ts + ' #' + seq + ' [' + kind.padEnd(6, ' ') + '] ' + text;
       _logEntries.push(line);
       if (_logEntries.length > 300) _logEntries.shift();
       console.log(line);
@@ -1735,8 +1744,18 @@
       }
     }
     function _logJSON(label, obj) {
+      if (!DEBUG_ENABLED) return;
       try { _log(label, JSON.stringify(obj, null, 2)); }
       catch (e) { _log(label, String(obj)); }
+    }
+    // The Debug log panel is opt-in: logging switches on only while it is open,
+    // so the normal page never pays for it.
+    var _debugPanel = document.getElementById('debug-panel');
+    if (_debugPanel) {
+      _debugPanel.addEventListener('toggle', function () {
+        DEBUG_ENABLED = _debugPanel.open;
+        if (DEBUG_ENABLED) _log('INFO', 'Debug logging enabled for this session.');
+      });
     }
 
     async function request(path, options = {}) {
@@ -2130,10 +2149,6 @@
 
           await loadResults();
 
-        };
-
-          await loadResults();
-
         }
 
         if (state.running || chatResponse.loading) statusTimer = setTimeout(pollStatus, 1200);
@@ -2352,8 +2367,6 @@
           resultsLoaded = true;
 
           await loadResults();
-
-        }
 
         }
 
@@ -4919,7 +4932,7 @@
   if (typeof onPageHidden === "function") window.onPageHidden = onPageHidden;
   if (typeof startPolling === "function") window.startPolling = startPolling;
   if (typeof stopPolling === "function") window.stopPolling = stopPolling;
-  window.loaded = loaded || {};
+  window.loaded = window.loaded || {};
 
 </script>
 
