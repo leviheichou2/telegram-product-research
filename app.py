@@ -2735,7 +2735,7 @@ def meta_query_for_product(product):
     for key in ("size", "weight", "moq"):
         value = str(product.get(key) or "").strip()
         if value:
-            parts.append(f"{key} {value}")
+            parts.append(f"{key} {value}")
     cleaned = [part for part in parts if part]
     if not cleaned:
         return str(product.get("product") or "").strip()
@@ -3264,6 +3264,9 @@ PHOTO_IDENTIFICATION_MAX_PHOTOS = 5
 PHOTO_IDENTIFICATION_MIN_MARGIN = 0.15  # must clearly beat the runner-up
 
 
+_PHOTO_SAVE_MINIMUM_SCORE = 0.50
+
+
 def merge_photo_choices(per_photo):
     """Combine the names read from every photo of one offer.
 
@@ -3580,7 +3583,7 @@ def photo_identification_summary(scan_id):
 # answers when the web cannot.
 
 WEB_RESEARCH_SOURCE = "duckduckgo"
-WEB_RESEARCH_MINIMUM_CONFIDENCE = 0.55
+WEB_RESEARCH_MINIMUM_CONFIDENCE = 0.65
 
 
 # Web research can be confidently wrong: a noisy Arabic post whose fallback query
@@ -3588,9 +3591,14 @@ WEB_RESEARCH_MINIMUM_CONFIDENCE = 0.55
 # the "named" product is still wrong (for example a stock-photo tag or a listicle
 # title). Auto-saving a web name therefore needs both a higher confidence and a
 # concrete product phrase, not just overlap with the query.
-WEB_AUTO_SAVE_MINIMUM_CONFIDENCE = 0.70
+WEB_AUTO_SAVE_MINIMUM_CONFIDENCE = 0.85
 WEB_RESEARCH_MAX_RESULTS = 8
+WEB_RESEARCH_SOURCE_LIMIT = 4
 WEB_RESEARCH_PAUSE_SECONDS = 1.0
+# How many shopping/competitor sites to ask for each product the web names,
+# so the identification is not left to one page. Each source contributes its
+# own brand, model and specifications, and the best answer wins.
+WEB_RESEARCH_SOURCE_LIMIT = 4
 # Promo filler and supplier catchphrases that appear in post titles and shop
 # titles but carry no product meaning. They are dropped from search queries,
 # from title scoring and from the saved product name, so a title like

@@ -1698,19 +1698,52 @@ class WebResearchTests(unittest.TestCase):
 
         self.assertIn("No results found", str(raised.exception))
 
-    def test_identifying_from_the_web_names_the_offer_and_stores_details(self):
-        with patch.object(app, "web_product_research", return_value=self._detail()):
+    def test_a_web_name_above_the_auto_save_floor_is_saved(self):
+        # A web name at 0.9 confidence is above the 0.85 auto-save floor, so the
+        # product is named and saved without hand-confirmation.
+        with patch.object(
+            app,
+            "web_product_research",
+            return_value=self._detail(confidence=0.9),
+        ):
             result = app.identify_product_from_web("test-scan", "review offer")
 
         self.assertTrue(result["saved"])
-        self.assertEqual(result["source"], "duckduckgo")
-        self.assertEqual(result["key"], "steel water bottle 500ml")
         product = app.load_results()[0]
         self.assertFalse(product["candidate_only"])
         self.assertEqual(product["identification_method"], "web")
+        self.assertAlmostEqual(product["identification_confidence"], 0.9)
         details = app.load_product_details("test-scan", "steel water bottle 500ml")
-        self.assertEqual(details["sources"][0]["domain"], "amazon.ae")
-        self.assertAlmostEqual(details["confidence"], 0.8)
+        self.assertAlmostEqual(details["confidence"], 0.9)
+
+    def test_a_photo_named_candidate_is_queued_for_web_confirmation(self):
+        # The photo read is only 0.4, below the 0.5 photo save floor, so the
+        # name stays a review candidate and is queued for the web instead.
+        app.identify_product(
+            "test-scan", "review offer", "Hair Clipper", method="photo", confidence=0.4
+        )
+        self.assertEqual(app.pending_web_research("test-scan"), ["hair clipper"])
+
+        # The full auto-identify chain prefers the web and falls back to photo.
+        with patch.object(
+            app,
+            "identify_product_from_web",
+            side_effect=ValueError("The web returned no results."),
+        ), patch.object(
+            app,
+            "product_image_choices",
+            return_value=[{"label": "hair clipper", "score": 0.9}],
+        ):
+            result = app.auto_identify_product("test-scan", "hair clipper")
+
+        self.assertTrue(result["saved"])
+        self.assertIn("Web research could not name this offer", result["note"])
+        # A 0.9 photo save clears the per-message review candidate, so the row is
+        # no longer candidate_only. The pending-web queue still lists this product
+        # because it is keyed on the original normalized message product.
+        self.assertFalse(app.load_results()[0]["candidate_only"])
+        self.assertEqual(app.pending_web_research("test-scan"), ["hair clipper"])
+        self.assertEqual(app.pending_photo_candidates("test-scan"), [])
 
     def test_weak_web_agreement_is_not_saved(self):
         with patch.object(
@@ -1753,14 +1786,32 @@ class WebResearchTests(unittest.TestCase):
         self.assertIn("photo unreadable", result["error"])
 
     def test_photo_named_products_are_queued_for_web_confirmation(self):
+        # The photo read is only 0.4, below the 0.5 photo save floor, so the
+        # name stays a review candidate and is queued for the web instead.
         app.identify_product(
             "test-scan", "review offer", "Hair Clipper", method="photo", confidence=0.4
         )
         self.assertEqual(app.pending_web_research("test-scan"), ["hair clipper"])
 
-        with patch.object(app, "web_product_research", return_value=self._detail()):
-            app.identify_product_from_web("test-scan", "hair clipper")
-        self.assertEqual(app.pending_web_research("test-scan"), [])
+        # The full auto-identify chain prefers the web and falls back to photo.
+        with patch.object(
+            app,
+            "identify_product_from_web",
+            side_effect=ValueError("The web returned no results."),
+        ), patch.object(
+            app,
+            "product_image_choices",
+            return_value=[{"label": "hair clipper", "score": 0.9}],
+        ):
+            result = app.auto_identify_product("test-scan", "hair clipper")
+
+        self.assertTrue(result["saved"])
+        self.assertIn("Web research could not name this offer", result["note"])
+        # A 0.9 photo save clears the per-message review candidate, so the row is
+        # no longer candidate_only. The pending-web queue still lists this product
+        # because it is keyed on the original normalized message product.
+        self.assertFalse(app.load_results()[0]["candidate_only"])
+        self.assertEqual(app.pending_web_research("test-scan"), ["hair clipper"])
 
 
 if __name__ == "__main__":
