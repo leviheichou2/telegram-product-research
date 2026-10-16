@@ -2074,6 +2074,8 @@
 
         chatsEl.querySelectorAll("input[type=checkbox]").forEach((checkbox) => checkbox.disabled = state.running);
 
+        pollInFlight = false;
+
         if (state.chat_total) {
 
             progressFill.parentElement.classList.toggle("running", state.running && state.job_kind === "scan");
@@ -2098,6 +2100,14 @@
 
         }
 
+        if (state.running && document.visibilityState !== "visible") {
+
+          statusTimer = setTimeout(pollStatus, 1200);
+
+          return;
+
+        }
+
         const chatResponse = await request("/api/chats", { timeout: 10000 }); // 10s timeout for chats
 
         if (JSON.stringify(chatResponse.chats) !== JSON.stringify(chats)) {
@@ -2108,16 +2118,23 @@
 
         }
 
-        if (!state.running && !state.error && !resultsLoaded) {
+        pollInFlight = false;
+
+        if (state.running || state.error) {
+
+          resultsEnabled = false;        } else if (!resultsLoaded) {
 
           resultsLoaded = true;
-                  await loadResults();
 
-                }
+          await loadResults();
+
+        }
 
         if (state.running || chatResponse.loading) statusTimer = setTimeout(pollStatus, 1200);
 
       } catch (error) {
+
+        pollInFlight = false;
 
         setStatus(error.message, true);
 
@@ -2127,9 +2144,246 @@
 
     async function loadResults() {
 
-          const response = await request("/api/results", { timeout: 10000 }); // 10s timeout for results
+      resultsEnabled = false;
 
-      renderResults(response.products, response.scan, response.legacy_results_unreliable);
+      const responsePromise = request("/api/results", { timeout: 10000 }); // 10s timeout for results
+
+      statusTimer = setTimeout(pollStatus, 1200);
+
+      try {
+
+        const response = await responsePromise;
+
+        renderResults(response.products, response.scan, response.legacy_results_unreliable);
+
+      } catch (error) {
+
+        setStatus(error.message, true);
+
+      } finally {
+
+        resultsEnabled = true;
+
+        pollInFlight = false;
+
+      }
+
+    }
+
+    function startPolling() {
+
+      if (window.__pollStarted) return;
+
+      window.__pollStarted = true;
+
+      if (stopPolling) stopPolling();
+
+      pollStatus();
+
+    }
+
+    function stopPolling() {
+
+      window.__pollStarted = false;
+
+      clearTimeout(statusTimer);
+
+    }
+
+    async function pollStatus() {
+
+      clearTimeout(statusTimer);
+
+      try {
+
+        pollInFlight = true;
+
+            const state = await request("/api/status", { timeout: 10000 }); // 10s timeout for status
+
+        let statusMessage = state.message;
+
+        if (
+
+          state.running &&
+
+          state.job_kind === "scan" &&
+
+          state.message.startsWith("Loading the product recognizer") &&
+
+          state.model_download_total
+
+        ) {
+
+          const downloaded = state.model_download_bytes || 0;
+
+          const total = state.model_download_total;
+
+          const percent = Math.floor(downloaded * 100 / total);
+
+          statusMessage =
+
+            `Loading product recognizer: ${percent}% (${Math.floor(downloaded / 1048576)} / ` +
+
+            `${Math.ceil(total / 1048576)} MB). Message scanning starts after the model loads.`;
+
+        } else if (
+
+          !state.running &&
+
+          state.message.startsWith("Scan stopped") &&
+
+          state.model_download_total &&
+
+          state.model_download_bytes < state.model_download_total
+
+        ) {
+
+          const downloaded = state.model_download_bytes || 0;
+
+          const total = state.model_download_total;
+
+          const percent = Math.floor(downloaded * 100 / total);
+
+          statusMessage =
+
+            `Scan stopped before checking any messages. Model download is continuing: ${percent}% ` +
+
+            `(${Math.floor(downloaded / 1048576)} / ${Math.ceil(total / 1048576)} MB). ` +
+
+            `Please wait before starting another scan.`;
+
+        }
+
+        if (state.error) {
+
+          var errMsg = String(state.error);
+
+          if (errMsg.startsWith('{') || errMsg.startsWith('[')) {
+
+            try { errMsg = JSON.stringify(JSON.parse(errMsg), null, 2); } catch (e) { errMsg = String(state.error); }
+
+          }
+
+          setStatus(statusMessage + ' \u2014 ' + errMsg, true);
+
+        } else {
+
+          setStatus(statusMessage);
+
+        }
+
+        renderLogin(state);
+
+        window.scanIsRunning = state.running;
+
+        scanButton.disabled = state.running || !chatsEl.querySelector("input[type=checkbox]:checked");
+
+        cancelButton.hidden = !state.running || state.job_kind !== "scan";
+
+        cancelButton.disabled = Boolean(state.cancel_requested);
+
+        document.querySelectorAll("#select-all, #select-none, #start-date, #end-date, #market")
+
+          .forEach((control) => control.disabled = state.running);
+
+        chatsEl.querySelectorAll("input[type=checkbox]").forEach((checkbox) => checkbox.disabled = state.running);
+
+        pollInFlight = false;
+
+        if (state.chat_total) {
+
+            progressFill.parentElement.classList.toggle("running", state.running && state.job_kind === "scan");
+
+            if (state.running && state.job_kind === "scan") {
+
+              progressFill.style.transform = "";
+
+            } else {
+
+              const progress = /Scan (stopped|finished)/i.test(state.message) ? 1 : 0;
+
+              progressFill.style.transform = `scaleX(${progress})`;
+
+            }
+
+        } else {
+
+            progressFill.parentElement.classList.remove("running");
+
+            progressFill.style.transform = state.running ? "scaleX(.08)" : "scaleX(0)";
+
+        }
+
+        if (state.running && document.visibilityState !== "visible") {
+
+          // do not keep polling chat counts and loading results while the browser
+          // tab is backgrounded; this is what makes the search/tools page feel frozen
+
+          statusTimer = setTimeout(pollStatus, 1200);
+
+          return;
+
+        }
+
+        const chatResponse = await request("/api/chats", { timeout: 10000 }); // 10s timeout for chats
+
+        if (JSON.stringify(chatResponse.chats) !== JSON.stringify(chats)) {
+
+          chats = chatResponse.chats;
+
+          renderChats();
+
+        }
+
+        pollInFlight = false;
+
+        if (state.running || state.error) {
+
+          resultsEnabled = false;        } else if (!resultsLoaded) {
+
+          resultsLoaded = true;
+
+          await loadResults();
+
+        }
+
+        if (state.running || chatResponse.loading) statusTimer = setTimeout(pollStatus, 1200);
+
+      } catch (error) {
+
+        pollInFlight = false;
+
+        setStatus(error.message, true);
+
+      }
+
+    }
+
+    async function loadResults() {
+
+      resultsEnabled = false;
+
+      const responsePromise = request("/api/results", { timeout: 10000 }); // 10s timeout for results
+
+      statusTimer = setTimeout(pollStatus, 1200);
+
+      try {
+
+        const response = await responsePromise;
+
+        renderResults(response.products, response.scan, response.legacy_results_unreliable);
+
+      } catch (error) {
+
+        setStatus(error.message, true);
+
+      } finally {
+
+        resultsEnabled = true;
+
+        pollInFlight = false;
+
+      }
 
     }
 
@@ -3705,12 +3959,12 @@
       request('/api/scans/select', { method: 'POST', body: JSON.stringify({ scan_id: scanId }), timeout: 10000 })
       .then(function () {
         setStatus('Loaded saved scan: ' + scanId.slice(0, 12) + '…');
-        loadResults();
-        loadScans();
       })
       .catch(function (err) {
         setStatus(String(err && err.message || err), true);
       });
+    window.setTimeout(loadScans, 0);
+    window.setTimeout(function () { if (window.startPolling) window.startPolling(); }, 0);
   }
 
   function promptRenameScan(scanId) {
@@ -3753,6 +4007,7 @@
       request('/api/scans/rerun', { method: 'POST', body: JSON.stringify({ scan_id: scanId }), timeout: 10000 })
       .then(function () {
         if (statusEl) statusEl.textContent = 'Rerunning saved scan…';
+        window.setTimeout(function () { if (window.startPolling) window.startPolling(); }, 0);
       })
       .catch(function (err) {
         if (statusEl) statusEl.textContent = String(err && err.message || err);
@@ -3847,16 +4102,10 @@
     if (sub) sub.hidden = !subPages(name);
     var group = document.querySelector('.side-nav .nav-group[data-group="research"]');
     if (group) group.classList.toggle("active", subPages(name));
-  }
-
-  function onPageShown(name) {
+  }    function onPageShown(name) {
     if (name === "products" && !loaded.products) {
       loaded.products = true;
-        // Start polling when products page is first shown
-        if (!window.__pollStarted) {
-          window.__pollStarted = true;
-          pollStatus();
-        }
+        startPolling();
       }
       if (name === "reports" && !loaded.reports) {
         loaded.reports = true;
@@ -3865,13 +4114,21 @@
       if (name === "image" && !loaded.image) {
         loaded.image = true;
         loadChats();
-        // Also start polling for image page
-        if (!window.__pollStarted) {
-          window.__pollStarted = true;
-          pollStatus();
-        }
+        startPolling();
       }
     }
+
+    function onPageHidden(name) {
+      if (name === "products" || name === "image") {
+        stopPolling();
+      }
+    }    function currentPageName() {
+    var pages = document.querySelectorAll(".app-page");
+    for (var i = 0; i < pages.length; i++) {
+      if (!pages[i].hidden) return pages[i].getAttribute("data-page");
+    }
+    return null;
+  }
 
   function showPage(name) {
     var pages = document.querySelectorAll(".app-page");
@@ -3880,6 +4137,7 @@
     }
     setActive(name);
     window.scrollTo(0, 0);
+    onPageHidden(currentPageName());
     onPageShown(name);
   }
   window.__showPage = showPage;
@@ -4635,13 +4893,24 @@
         var id = e.target.id ? '#' + e.target.id : '';
         _log('INPUT', (e.target.tagName.toLowerCase()) + id + ' = ' + (e.target.value || '').slice(0, 80));
       }
-    });
+    });// expose for other script blocks
 
-    // expose for other script blocks
     window.__loadChats = loadChats;
+
     window.__log = _log;
+
     window.__logJSON = _logJSON;
+
+
   })();
+
+  // ---------- page navigation (defined in a later script block; register hooks here) ----------
+  if (typeof onPageShown === "function") window.onPageShown = onPageShown;
+  if (typeof onPageHidden === "function") window.onPageHidden = onPageHidden;
+  if (typeof startPolling === "function") window.startPolling = startPolling;
+  if (typeof stopPolling === "function") window.stopPolling = stopPolling;
+  window.loaded = loaded || {};
+
 </script>
 
 
