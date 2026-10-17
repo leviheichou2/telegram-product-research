@@ -1184,6 +1184,32 @@
     transform-origin: center center; transition: transform .12s ease;
     background: #fff; border-radius: 4px;
   }
+
+  /* ==========================================================================
+     CATEGORY TREE (channels grouped the way the source spreadsheet groups them)
+     ========================================================================== */
+  .category-metrics { font-size: 11.5px; color: var(--muted); margin: 6px 0; line-height: 1.5; }
+  .category-group { border: 1px solid var(--border); border-radius: var(--r-sm); margin-bottom: 6px; overflow: hidden; }
+  .category-head {
+    display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
+    padding: 7px 10px; background: #f7f9fc; border-bottom: 1px solid var(--border);
+  }
+  .category-toggle {
+    border: 0; background: transparent; color: var(--ink-soft); font-size: 12px; font-weight: 800;
+    cursor: pointer; padding: 2px 4px; box-shadow: none;
+  }
+  .category-name { font-size: 12.5px; font-weight: 800; color: var(--ink); }
+  .category-counts { font-size: 11px; color: var(--muted); }
+  .category-actions { margin-left: auto; display: flex; gap: 4px; }
+  .category-actions button {
+    font-size: 10.5px; font-weight: 800; padding: 2px 8px; border-radius: 999px;
+    border: 1px solid var(--border-2); background: #fff; color: var(--ink-soft); cursor: pointer; box-shadow: none;
+  }
+  .category-actions button:hover { background: #eef3f9; box-shadow: none; }
+  .category-body { padding: 6px 8px; display: grid; gap: 4px; }
+  .category-body[hidden] { display: none; }
+  .chat-option.unavailable { opacity: .6; }
+  .chat-option .chat-source-state { font-size: 10.5px; color: var(--muted); margin-left: 6px; }
 </style>
 </head>
 
@@ -1460,6 +1486,17 @@
 
               </div>
 
+              <div class="chat-tools">
+                <input id="chat-search" type="search" placeholder="&#8981;  Search channels">
+                <select id="chat-category-filter" aria-label="Filter channels by category">
+                  <option value="">All categories</option>
+                </select>
+              </div>
+              <div id="category-metrics" class="category-metrics">Channels are grouped by the categories imported from your source spreadsheet.</div>
+              <div class="chat-tools">
+                <button id="chat-import-sources" class="secondary" type="button">Import sources&hellip;</button>
+                <span id="source-import-status" class="muted small"></span>
+              </div>
               <div id="chats" class="muted">Load your Telegram channels and groups to begin.</div>
 
             </div>
@@ -2119,57 +2156,305 @@
 
     }
 
+    // ------------------------------------------------------------------
+    // Category tree.
+    //
+    // Channels are grouped the way the imported source spreadsheet groups them,
+    // never as one flat list. A category collapses, expands, answers "how many
+    // channels, products and suppliers does this category have", and can select
+    // its own channels in one click. Channels that exist in the spreadsheet but
+    // not in the signed-in account are shown, greyed out, instead of vanishing.
+    // ------------------------------------------------------------------
+    var sourceCatalogue = null;
+
+    function chatLookup() {
+      var byHandle = {};
+      var byTitle = {};
+      var byId = {};
+      for (var i = 0; i < chats.length; i++) {
+        var chat = chats[i];
+        byId[String(chat.id)] = chat;
+        var handle = String(chat.username || "").toLowerCase().replace(/^@/, "");
+        if (handle) byHandle[handle] = chat;
+        var title = String(chat.title || "").trim().toLowerCase();
+        if (title) byTitle[title] = chat;
+      }
+      return { byHandle: byHandle, byTitle: byTitle, byId: byId };
+    }
+
+    function matchChat(source, lookup) {
+      if (source.chat_id != null && lookup.byId[String(source.chat_id)]) {
+        return lookup.byId[String(source.chat_id)];
+      }
+      var handle = String(source.username || "").toLowerCase().replace(/^@/, "");
+      if (handle && lookup.byHandle[handle]) return lookup.byHandle[handle];
+      var title = String(source.title || "").trim().toLowerCase();
+      if (title && lookup.byTitle[title]) return lookup.byTitle[title];
+      return null;
+    }
+
+    function channelRow(source, chat, selected, matchedKeys) {
+      var label = document.createElement("label");
+      label.className = "chat-option" + (chat ? "" : " unavailable");
+      if (chat) {
+        var checkbox = document.createElement("input");
+        checkbox.type = "checkbox";
+        checkbox.value = chat.id;
+        checkbox.checked = chatListInitialized && selected.has(String(chat.id));
+        checkbox.disabled = Boolean(window.scanIsRunning);
+        checkbox.setAttribute("data-source-key", source.source_key || "");
+        label.append(checkbox);
+        matchedKeys[String(chat.id)] = true;
+      }
+      var text = document.createElement("span");
+      text.textContent = chat
+        ? chat.title + " (" + chat.kind + ")"
+        : (source.title || source.username || source.source_key) + " — not in this Telegram account";
+      label.append(text);
+      if (chat) {
+        var state = document.createElement("span");
+        state.className = "chat-source-state";
+        state.textContent = source.last_scanned_at
+          ? "scanned · " + (source.products_found || 0) + " product(s)"
+          : (source.status === "paused" ? "paused" : "not scanned yet");
+        if (source.source_score != null) state.textContent += " · source score " + source.source_score;
+        label.append(state);
+      }
+      return label;
+    }
+
+    function categoryGroup(category, lookup, selected, matchedKeys) {
+      var group = document.createElement("div");
+      group.className = "category-group";
+
+      var head = document.createElement("div");
+      head.className = "category-head";
+      var toggle = document.createElement("button");
+      toggle.type = "button";
+      toggle.className = "category-toggle";
+      toggle.textContent = "\u25be";
+      toggle.setAttribute("aria-label", "Collapse or expand " + category.name);
+      var name = document.createElement("span");
+      name.className = "category-name";
+      name.textContent = category.name;
+      var counts = document.createElement("span");
+      counts.className = "category-counts";
+      counts.textContent = category.channel_count + " channel(s) · " +
+        (category.product_count || 0) + " product(s) · " +
+        (category.supplier_count || 0) + " supplier(s)" +
+        (category.linked_channel_count < category.channel_count
+          ? " · " + (category.channel_count - category.linked_channel_count) + " not in this account"
+          : "");
+      var actions = document.createElement("span");
+      actions.className = "category-actions";
+      var allButton = document.createElement("button");
+      allButton.type = "button";
+      allButton.textContent = "All";
+      var noneButton = document.createElement("button");
+      noneButton.type = "button";
+      noneButton.textContent = "None";
+      actions.append(allButton, noneButton);
+      head.append(toggle, name, counts, actions);
+
+      var body = document.createElement("div");
+      body.className = "category-body";
+      var rows = [];
+      (category.channels || []).forEach(function (source) {
+        var chat = matchChat(source, lookup);
+        var row = channelRow(source, chat, selected, matchedKeys);
+        rows.push(row);
+        body.append(row);
+      });
+      if (!rows.length) {
+        var empty = document.createElement("div");
+        empty.className = "muted small";
+        empty.textContent = "No channels in this category yet.";
+        body.append(empty);
+      }
+      body.hidden = Boolean(expandedCategories[category.name] === false);
+      toggle.textContent = body.hidden ? "\u25b8" : "\u25be";
+      toggle.addEventListener("click", function () {
+        body.hidden = !body.hidden;
+        expandedCategories[category.name] = !body.hidden;
+        toggle.textContent = body.hidden ? "\u25b8" : "\u25be";
+      });
+      allButton.addEventListener("click", function () { setGroupCheckboxes(rows, true); });
+      noneButton.addEventListener("click", function () { setGroupCheckboxes(rows, false); });
+
+      group.append(head, body);
+      return group;
+    }
+
+    function setGroupCheckboxes(rows, checked) {
+      rows.forEach(function (row) {
+        var box = row.querySelector("input[type=checkbox]");
+        if (box && !box.disabled) box.checked = checked;
+      });
+      updateSelectionSummary();
+    }
+
     function renderChats() {
-
-      const selected = new Set(
-
+      var selected = new Set(
         [...chatsEl.querySelectorAll("input[type=checkbox]:checked")].map((item) => item.value)
-
       );
-
+      var filterSelect = document.getElementById("chat-category-filter");
+      var searchBox = document.getElementById("chat-search");
+      var categoryFilter = filterSelect ? filterSelect.value : "";
+      var query = searchBox ? String(searchBox.value || "").trim().toLowerCase() : "";
       chatsEl.replaceChildren();
 
-      if (!chats.length) {
-
+      if (!chats.length && !(sourceCatalogue && sourceCatalogue.categories.length)) {
         chatsEl.textContent = "No channels or groups loaded yet.";
-
         updateSelectionSummary();
-
         return;
-
       }
 
-      for (const chat of chats) {
+      var lookup = chatLookup();
+      var matchedKeys = {};
+      var rendered = 0;
+      (sourceCatalogue && sourceCatalogue.categories ? sourceCatalogue.categories : []).forEach(function (category) {
+        if (categoryFilter && category.name !== categoryFilter) return;
+        var visibleChannels = (category.channels || []).filter(function (source) {
+          if (!query) return true;
+          return (String(source.title || "") + " " + String(source.username || "")).toLowerCase().includes(query);
+        });
+        if (query && !visibleChannels.length && !category.name.toLowerCase().includes(query)) return;
+        chatsEl.append(categoryGroup({ ...category, channels: visibleChannels }, lookup, selected, matchedKeys));
+        rendered++;
+      });
 
-        const label = document.createElement("label");
-
-        label.className = "chat-option";
-
-        const checkbox = document.createElement("input");
-
-        checkbox.type = "checkbox";
-
-        checkbox.value = chat.id;
-
-        checkbox.checked = chatListInitialized && selected.has(String(chat.id));
-
-        checkbox.disabled = Boolean(window.scanIsRunning);
-
-        const text = document.createElement("span");
-
-        text.textContent = `${chat.title} (${chat.kind})`;
-
-        label.append(checkbox, text);
-
-        chatsEl.append(label);
-
+      // Channels that are in Telegram but not in any imported category stay
+      // reachable: the tree must never hide a channel the user can scan.
+      var others = chats.filter(function (chat) { return !matchedKeys[String(chat.id)]; });
+      if (others.length) {
+        var group = document.createElement("div");
+        group.className = "category-group";
+        var head = document.createElement("div");
+        head.className = "category-head";
+        var name = document.createElement("span");
+        name.className = "category-name";
+        name.textContent = sourceCatalogue ? "Other channels (not in the source list)" : "Telegram channels & groups";
+        var counts = document.createElement("span");
+        counts.className = "category-counts";
+        counts.textContent = others.length + " channel(s)";
+        head.append(name, counts);
+        var body = document.createElement("div");
+        body.className = "category-body";
+        var rows = [];
+        others.forEach(function (chat) {
+          var row = channelRow({ source_key: "chat:" + chat.id, title: chat.title }, chat, selected, matchedKeys);
+          rows.push(row);
+          body.append(row);
+        });
+        var actions = document.createElement("span");
+        actions.className = "category-actions";
+        var allButton = document.createElement("button");
+        allButton.type = "button";
+        allButton.textContent = "All";
+        var noneButton = document.createElement("button");
+        noneButton.type = "button";
+        noneButton.textContent = "None";
+        allButton.addEventListener("click", function () { setGroupCheckboxes(rows, true); });
+        noneButton.addEventListener("click", function () { setGroupCheckboxes(rows, false); });
+        actions.append(allButton, noneButton);
+        head.append(actions);
+        group.append(head, body);
+        chatsEl.append(group);
+        rendered++;
       }
 
+      if (!rendered) {
+        var empty = document.createElement("p");
+        empty.className = "muted";
+        empty.textContent = "No channels match this filter.";
+        chatsEl.append(empty);
+      }
       chatListInitialized = true;
-
       updateSelectionSummary();
-
     }
+
+    function loadSourceCatalogue() {
+      return request("/api/sources", { timeout: 20000 })
+        .then(function (data) {
+          sourceCatalogue = data && data.categories ? data : null;
+          var filter = document.getElementById("chat-category-filter");
+          if (filter) {
+            var current = filter.value;
+            filter.replaceChildren();
+            var all = document.createElement("option");
+            all.value = "";
+            all.textContent = sourceCatalogue
+              ? "All categories (" + sourceCatalogue.totals.channels + " channels)"
+              : "All categories";
+            filter.append(all);
+            if (sourceCatalogue) {
+              sourceCatalogue.categories.forEach(function (category) {
+                var option = document.createElement("option");
+                option.value = category.name;
+                option.textContent = category.name + " (" + category.channel_count + ")";
+                filter.append(option);
+              });
+            }
+            filter.value = current;
+          }
+          var metrics = document.getElementById("category-metrics");
+          if (metrics) {
+            metrics.textContent = sourceCatalogue
+              ? sourceCatalogue.totals.categories + " categor(y/ies) · " +
+                sourceCatalogue.totals.channels + " channel(s) · " +
+                sourceCatalogue.totals.linked_channels + " matched to this Telegram account · " +
+                sourceCatalogue.totals.scanned_channels + " already scanned."
+              : "Channels are grouped by the categories imported from your source spreadsheet.";
+          }
+          renderChats();
+          return sourceCatalogue;
+        })
+        .catch(function () {
+          sourceCatalogue = null;
+          renderChats();
+          return null;
+        });
+    }
+
+    function importSourcesFromSheet() {
+      var path = window.prompt(
+        "Path of the exported source spreadsheet (an .xlsx workbook with one tab per category, a single .csv, or a folder of them):",
+        ""
+      );
+      if (!path) return;
+      var out = document.getElementById("source-import-status");
+      if (out) out.textContent = "Importing…";
+      request("/api/sources/import", {
+        method: "POST",
+        body: JSON.stringify({ path: path }),
+        timeout: 300000
+      }).then(function (summary) {
+        var text = "Imported " + summary.rows_read + " row(s): " + summary.sources_added +
+          " new, " + summary.sources_updated + " updated, " + summary.categories_created +
+          " new category(ies)" + (summary.linked ? ", " + summary.linked + " linked to Telegram" : "") + ".";
+        if (out) out.textContent = text;
+        if (window.__notify) window.__notify(text, "ok", "Sources imported");
+        loadSourceCatalogue();
+      }).catch(function (error) {
+        var message = (error && error.message) || String(error);
+        if (out) out.textContent = message;
+        if (window.__notify) window.__notify(message, "error", "Import failed");
+      });
+    }
+
+    (function wireCategoryControls() {
+      var search = document.getElementById("chat-search");
+      if (search) search.addEventListener("input", function () { renderChats(); });
+      var filter = document.getElementById("chat-category-filter");
+      if (filter) filter.addEventListener("change", function () { renderChats(); });
+      var importButton = document.getElementById("chat-import-sources");
+      if (importButton) importButton.addEventListener("click", importSourcesFromSheet);
+    })();
+
+    var expandedCategories = {};
+
+    // The category tree is independent of Telegram sign-in, so it loads at start.
+    if (document.getElementById("chat-category-filter")) loadSourceCatalogue();
 
     function updateSelectionSummary() {
 
@@ -3686,6 +3971,8 @@
             start_date: startDate,
 
             end_date: endDate,
+
+            category: (document.getElementById("chat-category-filter") || {}).value || "",
 
             market: document.querySelector("#market").value
 

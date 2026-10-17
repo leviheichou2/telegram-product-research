@@ -4,6 +4,7 @@ import asyncio
 import tempfile
 import time
 import unittest
+import zipfile
 import os
 import json
 from contextlib import closing
@@ -2191,6 +2192,225 @@ class ProgressiveIdentificationTests(unittest.TestCase):
         app._identify_state["scan_id"] = "scan-live"
 
         self.assertEqual(app.enqueue_identification("another-scan", ["review offer 1"]), 0)
+
+
+def _spreadsheet_column(index):
+    name = ""
+    index += 1
+    while index:
+        index, remainder = divmod(index - 1, 26)
+        name = chr(65 + remainder) + name
+    return name
+
+
+def write_test_workbook(path, sheets):
+    """Write a minimal xlsx (worksheet name -> rows) with no dependencies."""
+    with zipfile.ZipFile(path, "w") as archive:
+        names = "".join(
+            f'<sheet name="{name}" sheetId="{position}"/>'
+            for position, (name, _) in enumerate(sheets, start=1)
+        )
+        archive.writestr(
+            "xl/workbook.xml",
+            f'<?xml version="1.0"?><workbook><sheets>{names}</sheets></workbook>',
+        )
+        for position, (_, rows) in enumerate(sheets, start=1):
+            parts = ['<?xml version="1.0"?><worksheet><sheetData>']
+            for row_index, row in enumerate(rows, start=1):
+                parts.append(f'<row r="{row_index}">')
+                for column_index, value in enumerate(row):
+                    reference = f"{_spreadsheet_column(column_index)}{row_index}"
+                    parts.append(
+                        f'<c r="{reference}" t="inlineStr"><is><t>{value}</t></is></c>'
+                    )
+                parts.append("</row>")
+            parts.append("</sheetData></worksheet>")
+            archive.writestr(f"xl/worksheets/sheet{position}.xml", "".join(parts))
+    return path
+
+
+class SourceCatalogueTests(unittest.TestCase):
+    """The worksheet structure is what drives categories and scanning."""
+
+    def setUp(self):
+        self.temp_dir = tempfile.TemporaryDirectory()
+        self.original_db = app.DB_PATH
+        self.original_entities = app._chat_entities
+        app.DB_PATH = Path(self.temp_dir.name) / "research.sqlite3"
+        app.initialize_database()
+        app._chat_entities = {
+            -1001: SimpleNamespace(title="Electronics Deals DZ", username="electronicsdz"),
+            -1002: SimpleNamespace(title="Beauty Wholesale", username="beautywholesale"),
+        }
+        self.folder = Path(self.temp_dir.name)
+
+    def tearDown(self):
+        app.DB_PATH = self.original_db
+        app._chat_entities = self.original_entities
+        self.temp_dir.cleanup()
+
+    def _workbook(self, name="sources.xlsx"):
+        return write_test_workbook(
+            self.folder / name,
+            [
+                (
+                    "Electronics",
+                    [
+                        ["Channel Name", "Username", "Language", "Country"],
+                        ["Electronics Deals DZ", "@electronicsdz", "AR", "DZ"],
+                        ["Happy Tech", "@happytech", "AR", "DZ"],
+                    ],
+                ),
+                (
+                    "Beauty",
+                    [
+                        ["Channel Name", "Username", "Language"],
+                        ["Beauty Wholesale", "@beautywholesale", "FR"],
+                    ],
+                ),
+            ],
+        )
+
+    def test_each_worksheet_becomes_its_own_category(self):
+        summary = app.import_sources_from_workbook(self._workbook())
+
+        catalogue = app.source_catalogue()
+        names = [category["name"] for category in catalogue["categories"]]
+
+        self.assertEqual(sorted(names), ["Beauty", "Electronics"])
+        self.assertEqual(summary["sources_added"], 3)
+        self.assertEqual(catalogue["totals"]["channels"], 3)
+        electronics = next(c for c in catalogue["categories"] if c["name"] == "Electronics")
+        self.assertEqual(electronics["channel_count"], 2)
+        self.assertEqual(electronics["linked_channel_count"], 1)
+
+    def test_a_worksheet_without_a_header_row_is_read_from_its_values(self):
+        path = self.folder / "raw.xlsx"
+        write_test_workbook(
+            path,
+            [("Fitness", [["Fit Gear", "@fitgear"], ["Gym Supplies", "@gymsupplies"]])],
+        )
+
+        app.import_sources_from_workbook(path)
+
+        category = next(
+            item for item in app.source_catalogue()["categories"] if item["name"] == "Fitness"
+        )
+        self.assertEqual(category["channel_count"], 2)
+        self.assertEqual(
+            sorted(channel["username"] for channel in category["channels"]),
+            ["@fitgear", "@gymsupplies"],
+        )
+
+    def test_a_single_csv_export_uses_its_file_name_as_the_category(self):
+        path = self.folder / "Home & Kitchen.csv"
+        path.write_text(
+            "Channel Name,Telegram,Country\nKitchen Gadgets,@kitchengadgets,DZ\n",
+            encoding="utf-8",
+        )
+
+        summary = app.import_sources_from_workbook(path)
+
+        self.assertEqual(summary["categories"], ["Home & Kitchen"])
+        self.assertIn(
+            "Home & Kitchen",
+            [category["name"] for category in app.source_catalogue()["categories"]],
+        )
+
+    def test_re_importing_updates_sources_instead_of_duplicating_them(self):
+        path = self._workbook()
+        first = app.import_sources_from_workbook(path)
+
+        second = app.import_sources_from_workbook(path)
+
+        self.assertEqual(first["sources_added"], 3)
+        self.assertEqual(second["sources_added"], 0)
+        self.assertEqual(second["sources_updated"], 3)
+        self.assertEqual(app.source_catalogue()["totals"]["channels"], 3)
+
+    def test_a_category_scans_only_its_own_channels(self):
+        app.import_sources_from_workbook(self._workbook())
+
+        targets = app.resolve_scan_targets("Beauty")
+
+        self.assertEqual(targets["chat_ids"], [-1002])
+        self.assertEqual(targets["unavailable"], [])
+
+    def test_a_channel_missing_from_this_telegram_account_is_reported(self):
+        app.import_sources_from_workbook(self._workbook())
+
+        targets = app.resolve_scan_targets("Electronics")
+
+        self.assertEqual(targets["chat_ids"], [-1001])
+        self.assertEqual(targets["unavailable"], ["Happy Tech"])
+
+    def test_explicit_sources_can_be_scanned_without_a_category(self):
+        app.import_sources_from_workbook(self._workbook())
+
+        targets = app.resolve_scan_targets("", ["handle:beautywholesale"])
+
+        self.assertEqual(targets["chat_ids"], [-1002])
+        self.assertEqual(targets["sources_considered"], 1)
+
+    def test_a_scan_can_record_the_category_it_came_from(self):
+        with closing(sqlite3.connect(app.DB_PATH)) as connection:
+            columns = {row[1] for row in connection.execute("PRAGMA table_info(scans)")}
+
+        self.assertIn("category", columns)
+
+    def test_source_score_rewards_channels_that_name_their_products(self):
+        named = app.compute_source_score(10, 9, 8)
+        unnamed = app.compute_source_score(10, 0, 2)
+
+        self.assertIsNotNone(named)
+        self.assertGreater(named, unnamed)
+        self.assertLessEqual(named, 100)
+        self.assertIsNone(app.compute_source_score(0, 0, 0))
+
+    def test_scan_history_stores_what_each_channel_contributed(self):
+        app.import_sources_from_workbook(self._workbook())
+        with closing(sqlite3.connect(app.DB_PATH)) as connection:
+            connection.execute(
+                """
+                INSERT INTO scans (
+                    scan_id, start_date, end_date, market, completed_at, status,
+                    extractor_version, category
+                ) VALUES ('cat-scan', '2026-10-01', '2026-10-03', 'Algeria',
+                          '2026-10-03T12:00:00+00:00', 'completed', 3, 'Electronics')
+                """
+            )
+            connection.execute(
+                """
+                INSERT INTO messages (
+                    scan_id, chat_id, message_id, product, normalized_product,
+                    supplier, chat_title, message_date, message_text, price,
+                    currency, review_candidate
+                ) VALUES (
+                    'cat-scan', -1001, 1, 'Item1001', 'item1001',
+                    'Supplier One', 'Electronics Deals DZ', '2026-10-02T12:00:00+00:00',
+                    'Item1001 1200 DZD', 1200, 'DZD', 0
+                )
+                """
+            )
+            connection.commit()
+
+        written = app.record_source_scan_history("cat-scan", [-1001], "Electronics")
+
+        self.assertEqual(written, 1)
+        with closing(sqlite3.connect(app.DB_PATH)) as connection:
+            row = connection.execute(
+                "SELECT products_found, products_identified, source_score, category FROM source_scan_history WHERE scan_id = 'cat-scan'"
+            ).fetchone()
+            source = connection.execute(
+                "SELECT products_found, last_scanned_at, source_score FROM sources WHERE username = '@electronicsdz'"
+            ).fetchone()
+        self.assertEqual(row[0], 1)
+        self.assertEqual(row[1], 1)
+        self.assertEqual(row[3], "Electronics")
+        self.assertIsNotNone(row[2])
+        self.assertEqual(source[0], 1)
+        self.assertTrue(source[1])
+        self.assertIsNotNone(source[2])
 
 
 if __name__ == "__main__":

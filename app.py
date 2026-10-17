@@ -23,6 +23,8 @@ import sqlite3
 import threading
 import time
 import webbrowser
+import zipfile
+from xml.etree import ElementTree
 from concurrent.futures import Future, ThreadPoolExecutor
 from datetime import date, datetime, timedelta, timezone
 from html.parser import HTMLParser
@@ -491,6 +493,7 @@ def initialize_database():
             ("chat_ids_json", "TEXT NOT NULL DEFAULT '[]'"),
             ("name", "TEXT NOT NULL DEFAULT ''"),
             ("extractor_version", "INTEGER NOT NULL DEFAULT 0"),
+            ("category", "TEXT NOT NULL DEFAULT ''"),
         ):
             if name not in scan_columns:
                 connection.execute(f"ALTER TABLE scans ADD COLUMN {name} {declaration}")
@@ -634,6 +637,74 @@ def initialize_database():
                 )
         connection.execute(
             """
+            CREATE TABLE IF NOT EXISTS source_categories (
+                category_id INTEGER PRIMARY KEY AUTOINCREMENT,
+                name TEXT NOT NULL UNIQUE,
+                sheet_name TEXT NOT NULL DEFAULT '',
+                position INTEGER NOT NULL DEFAULT 0,
+                created_at TEXT NOT NULL
+            )
+            """
+        )
+        connection.execute(
+            """
+            CREATE TABLE IF NOT EXISTS sources (
+                source_id INTEGER PRIMARY KEY AUTOINCREMENT,
+                source_key TEXT NOT NULL UNIQUE,
+                chat_id INTEGER,
+                title TEXT NOT NULL DEFAULT '',
+                username TEXT NOT NULL DEFAULT '',
+                telegram_url TEXT NOT NULL DEFAULT '',
+                category_id INTEGER,
+                subcategory TEXT NOT NULL DEFAULT '',
+                language TEXT NOT NULL DEFAULT '',
+                country TEXT NOT NULL DEFAULT '',
+                status TEXT NOT NULL DEFAULT 'active',
+                source_score INTEGER,
+                sheet_name TEXT NOT NULL DEFAULT '',
+                imported_at TEXT NOT NULL,
+                last_scanned_at TEXT,
+                products_found INTEGER NOT NULL DEFAULT 0,
+                products_identified INTEGER NOT NULL DEFAULT 0,
+                ads_found INTEGER NOT NULL DEFAULT 0,
+                suppliers_linked INTEGER NOT NULL DEFAULT 0,
+                notes TEXT NOT NULL DEFAULT ''
+            )
+            """
+        )
+        connection.execute(
+            """
+            CREATE TABLE IF NOT EXISTS source_imports (
+                import_id INTEGER PRIMARY KEY AUTOINCREMENT,
+                file_name TEXT NOT NULL,
+                imported_at TEXT NOT NULL,
+                categories_created INTEGER NOT NULL DEFAULT 0,
+                sources_added INTEGER NOT NULL DEFAULT 0,
+                sources_updated INTEGER NOT NULL DEFAULT 0,
+                rows_read INTEGER NOT NULL DEFAULT 0,
+                warnings_json TEXT NOT NULL DEFAULT '[]'
+            )
+            """
+        )
+        connection.execute(
+            """
+            CREATE TABLE IF NOT EXISTS source_scan_history (
+                scan_id TEXT NOT NULL,
+                source_key TEXT NOT NULL,
+                chat_id INTEGER,
+                category TEXT NOT NULL DEFAULT '',
+                products_found INTEGER NOT NULL DEFAULT 0,
+                products_identified INTEGER NOT NULL DEFAULT 0,
+                ads_found INTEGER NOT NULL DEFAULT 0,
+                suppliers_linked INTEGER NOT NULL DEFAULT 0,
+                source_score INTEGER,
+                scanned_at TEXT NOT NULL,
+                PRIMARY KEY (scan_id, source_key)
+            )
+            """
+        )
+        connection.execute(
+            """
             UPDATE scans SET status = 'cancelled', completed_at = ?
             WHERE status = 'running'
             """,
@@ -672,6 +743,764 @@ def initialize_database():
             else:
                 _current_scan_id = scan_id
         connection.commit()
+
+
+# ---------------------------------------------------------------------------
+# Source and category intelligence.
+#
+# The reference spreadsheet is the initial intelligence source, not the
+# database: its worksheets become categories, its rows become Telegram sources,
+# and from that point on the app runs entirely from its own SQLite tables. A
+# worksheet that groups channels under one topic is preserved as that category,
+# so a scan can be aimed at one category instead of at everything.
+# ---------------------------------------------------------------------------
+
+SOURCE_STATUS_ACTIVE = "active"
+SOURCE_STATUS_PAUSED = "paused"
+
+# Column headers are matched by keyword, in English, French and Arabic, because
+# the sheet mixes them. A worksheet with no usable header row is still read by
+# sniffing its values (a t.me link is a URL, @name is a username).
+SOURCE_HEADER_HINTS = {
+    "title": ("channel", "channels", "title", "name", "source", "group", "groupe", "قناة", "اسم"),
+    "username": ("username", "handle", "user", "compte", "identifiant"),
+    "url": ("url", "link", "lien", "telegram", "رابط"),
+    "category": ("category", "categorie", "catégorie", "sector", "niche", "theme", "فئة", "تصنيف"),
+    "subcategory": ("subcategory", "sub category", "sub-category", "type"),
+    "language": ("language", "lang", "langue", "لغة"),
+    "country": ("country", "pays", "region", "market", "country code", "بلد"),
+    "status": ("status", "état", "etat", "state"),
+    "notes": ("notes", "note", "comment", "comments", "remarque", "ملاحظة"),
+    "score": ("score", "quality", "rating", "نقاط"),
+}
+
+_HANDLE_RE = re.compile(r"^@?[A-Za-z0-9_]{4,32}$")
+_TELEGRAM_LINK_RE = re.compile(
+    r"(?:https?://)?(?:www\.)?(?:t\.me|telegram\.me|telegram\.dog)/(?:s/)?(?P<handle>[A-Za-z0-9_]+)",
+    re.IGNORECASE,
+)
+
+
+def extract_telegram_handle(value):
+    """The @handle inside a username, a t.me link, or a bare handle."""
+    text = str(value or "").strip()
+    if not text:
+        return ""
+    match = _TELEGRAM_LINK_RE.search(text)
+    if match:
+        return match.group("handle")
+    if text.startswith("@"):
+        candidate = text[1:].strip()
+    else:
+        candidate = text
+    if _HANDLE_RE.match(candidate) and not any(ch in candidate for ch in " ./\\"):
+        return candidate
+    return ""
+
+
+def source_key_for(title="", username="", url=""):
+    """Stable identity for one source across imports and Telegram itself.
+
+    The handle wins because it is the same string in the sheet and in Telegram;
+    the link and then the title are the fallbacks for rows that only carry one.
+    """
+    handle = extract_telegram_handle(username) or extract_telegram_handle(url)
+    if handle:
+        return f"handle:{handle.casefold()}"
+    link = str(url or "").strip().rstrip("/").casefold()
+    if link:
+        return f"url:{link}"
+    normalized = normalize_product(title)
+    return f"title:{normalized}" if normalized else ""
+
+
+def source_key_from_message(post):
+    """The same identity built from a real source post we already collected."""
+    return source_key_for(post.get("title") or "", post.get("username") or "", post.get("url") or "")
+
+
+# ---- spreadsheet reading (standard library only) ---------------------------
+
+def _local_name(tag):
+    return tag.rsplit("}", 1)[-1]
+
+
+def _xlsx_shared_strings(archive):
+    try:
+        raw = archive.read("xl/sharedStrings.xml")
+    except KeyError:
+        return []
+    root = ElementTree.fromstring(raw)
+    strings = []
+    for item in root:
+        strings.append("".join(node.text or "" for node in item.iter() if _local_name(node.tag) == "t"))
+    return strings
+
+
+def _xlsx_sheet_names(archive):
+    root = ElementTree.fromstring(archive.read("xl/workbook.xml"))
+    names = []
+    for node in root.iter():
+        if _local_name(node.tag) == "sheet":
+            names.append(str(node.attrib.get("name", "")))
+    return names
+
+
+def _xlsx_column_index(reference):
+    letters = "".join(character for character in str(reference or "") if character.isalpha())
+    index = 0
+    for character in letters.upper():
+        index = index * 26 + (ord(character) - 64)
+    return max(0, index - 1)
+
+
+def _xlsx_sheet_rows(archive, position, shared):
+    try:
+        raw = archive.read(f"xl/worksheets/sheet{position}.xml")
+    except KeyError:
+        return []
+    root = ElementTree.fromstring(raw)
+    rows = []
+    for node in root.iter():
+        if _local_name(node.tag) != "row":
+            continue
+        values = []
+        for cell in node:
+            if _local_name(cell.tag) != "c":
+                continue
+            column = _xlsx_column_index(cell.attrib.get("r", ""))
+            cell_type = cell.attrib.get("t", "")
+            text = ""
+            for child in cell.iter():
+                if _local_name(child.tag) == "v":
+                    text = child.text or text
+                elif _local_name(child.tag) == "t" and cell_type == "inlineStr":
+                    text = child.text or ""
+            if cell_type == "s" and str(text).isdigit():
+                shared_position = int(text)
+                text = shared[shared_position] if shared_position < len(shared) else ""
+            while len(values) < column:
+                values.append("")
+            values.append(" ".join(str(text).split()))
+        rows.append(values)
+    return rows
+
+
+def _csv_rows(path):
+    with path.open("r", encoding="utf-8-sig", errors="replace", newline="") as handle:
+        sample = handle.read(4096)
+        handle.seek(0)
+        try:
+            dialect = csv.Sniffer().sniff(sample, delimiters=",;\t|")
+        except csv.Error:
+            dialect = csv.excel
+        reader = csv.reader(handle, dialect)
+        return [[" ".join(str(cell).split()) for cell in row] for row in reader]
+
+
+def read_workbook(path):
+    """Every worksheet as ``(name, rows)``. XLSX, CSV and folders of both.
+
+    An XLSX export carries the worksheet names, which are the categories. A CSV
+    export is one worksheet, so the file name is used as the category name.
+    """
+    path = Path(path)
+    if path.is_dir():
+        sheets = []
+        for child in sorted(path.iterdir()):
+            if child.suffix.casefold() in (".xlsx", ".csv", ".tsv", ".txt"):
+                sheets.extend(read_workbook(child))
+        if not sheets:
+            raise ValueError(f"No .xlsx or .csv files found in {path}.")
+        return sheets
+    if path.suffix.casefold() == ".xlsx":
+        with zipfile.ZipFile(path) as archive:
+            shared = _xlsx_shared_strings(archive)
+            sheets = []
+            for position, name in enumerate(_xlsx_sheet_names(archive), start=1):
+                rows = _xlsx_sheet_rows(archive, position, shared)
+                if any(any(str(cell).strip() for cell in row) for row in rows):
+                    sheets.append((name, rows))
+        if not sheets:
+            raise ValueError(f"{path.name} has no readable worksheet rows.")
+        return sheets
+    if path.suffix.casefold() in (".csv", ".tsv", ".txt"):
+        rows = _csv_rows(path)
+        if not any(any(str(cell).strip() for cell in row) for row in rows):
+            raise ValueError(f"{path.name} is empty.")
+        return [(path.stem, rows)]
+    raise ValueError(
+        "Import needs an .xlsx workbook, a .csv file, or a folder of them."
+    )
+
+
+def _header_mapping(rows):
+    """Header row position and the column each field lives in, when present."""
+    best = None
+    for position, row in enumerate(rows[:5]):
+        mapping = {}
+        for index, cell in enumerate(row):
+            label = str(cell or "").strip().casefold()
+            if not label:
+                continue
+            for field, hints in SOURCE_HEADER_HINTS.items():
+                if field in mapping:
+                    continue
+                if any(hint in label for hint in hints):
+                    mapping[field] = index
+                    break
+        if len(mapping) >= 2 and (best is None or len(mapping) > len(best[1])):
+            best = (position, mapping)
+    return best
+
+
+def _sniff_mapping(rows):
+    """Guess columns from the values when the worksheet has no header row."""
+    mapping = {}
+    for index in range(max((len(row) for row in rows), default=0)):
+        values = [str(row[index]).strip() for row in rows[:40] if index < len(row) and str(row[index]).strip()]
+        if not values:
+            continue
+        if "url" not in mapping and sum(1 for value in values if _TELEGRAM_LINK_RE.search(value)) >= max(1, len(values) // 2):
+            mapping["url"] = index
+            continue
+        if "username" not in mapping and sum(1 for value in values if value.startswith("@")) >= max(1, len(values) // 2):
+            mapping["username"] = index
+            continue
+        if "title" not in mapping:
+            mapping["title"] = index
+    return mapping
+
+
+def _cell(row, mapping, field):
+    index = mapping.get(field)
+    if index is None or index >= len(row):
+        return ""
+    return str(row[index] or "").strip()
+
+
+def _field_or_empty(value):
+    text = str(value or "").strip()
+    return "" if text in ("-", "—", "n/a", "N/A", "none", "None") else text
+
+
+def spreadsheet_sources(path, default_category=""):
+    """Every source row in a workbook, tagged with the category it came from.
+
+    The worksheet name is the category unless the sheet carries its own category
+    column, in which case that column wins and the worksheet name is kept as the
+    sheet it was found on.
+    """
+    sources = []
+    warnings = []
+    for sheet_name, rows in read_workbook(path):
+        if not rows:
+            continue
+        header = _header_mapping(rows)
+        if header:
+            header_position, mapping = header
+            data_rows = rows[header_position + 1 :]
+        else:
+            mapping = _sniff_mapping(rows)
+            data_rows = rows
+            if mapping:
+                warnings.append(f"{sheet_name}: no header row found, columns guessed from the values.")
+        if not mapping:
+            warnings.append(f"{sheet_name}: skipped, no channel column could be identified.")
+            continue
+        sheet_category = str(sheet_name or "").strip() or default_category
+        for row in data_rows:
+            title = _field_or_empty(_cell(row, mapping, "title"))
+            username = _field_or_empty(_cell(row, mapping, "username"))
+            url = _field_or_empty(_cell(row, mapping, "url"))
+            if not (title or username or url):
+                continue
+            if not username and url:
+                username = extract_telegram_handle(url)
+            if not url and username:
+                url = f"https://t.me/{extract_telegram_handle(username) or username.lstrip('@')}"
+            category = _field_or_empty(_cell(row, mapping, "category")) or sheet_category
+            sources.append(
+                {
+                    "title": title or (username or url),
+                    "username": username,
+                    "url": url,
+                    "category": category,
+                    "subcategory": _field_or_empty(_cell(row, mapping, "subcategory")),
+                    "language": _field_or_empty(_cell(row, mapping, "language")),
+                    "country": _field_or_empty(_cell(row, mapping, "country")),
+                    "status": (_field_or_empty(_cell(row, mapping, "status")) or SOURCE_STATUS_ACTIVE).casefold(),
+                    "notes": _field_or_empty(_cell(row, mapping, "notes")),
+                    "sheet_name": sheet_name,
+                }
+            )
+    return sources, warnings
+
+
+def import_sources_from_workbook(path, replace_categories=False):
+    """Load a spreadsheet into the internal source database.
+
+    Existing sources are updated, never duplicated: the identity is the handle,
+    the link or the title, so re-importing a workbook is safe and idempotent.
+    """
+    sources, warnings = spreadsheet_sources(path)
+    if not sources:
+        raise ValueError("No channel rows were found in that file.")
+    imported_at = datetime.now(timezone.utc).isoformat()
+    added = updated = 0
+    categories = []
+    with closing(sqlite3.connect(DB_PATH)) as connection:
+        connection.row_factory = sqlite3.Row
+        existing_categories = {
+            row["name"].casefold(): row["category_id"]
+            for row in connection.execute("SELECT category_id, name FROM source_categories")
+        }
+        position = len(existing_categories)
+        for source in sources:
+            category_name = source["category"].strip() or "Uncategorised"
+            category_id = existing_categories.get(category_name.casefold())
+            if category_id is None:
+                position += 1
+                cursor = connection.execute(
+                    """
+                    INSERT INTO source_categories (name, sheet_name, position, created_at)
+                    VALUES (?, ?, ?, ?)
+                    """,
+                    (category_name, source["sheet_name"], position, imported_at),
+                )
+                category_id = cursor.lastrowid
+                existing_categories[category_name.casefold()] = category_id
+                if category_name not in categories:
+                    categories.append(category_name)
+            key = source_key_for(source["title"], source["username"], source["url"])
+            if not key:
+                warnings.append(f"{source['title']}: skipped, no identifiable channel.")
+                continue
+            chat_id = _telegram_chat_id_for_source(source["username"], source["title"])
+            row = connection.execute(
+                "SELECT source_id FROM sources WHERE source_key = ?", (key,)
+            ).fetchone()
+            if row:
+                connection.execute(
+                    """
+                    UPDATE sources SET
+                        title = COALESCE(NULLIF(?, ''), title),
+                        username = COALESCE(NULLIF(?, ''), username),
+                        telegram_url = COALESCE(NULLIF(?, ''), telegram_url),
+                        category_id = ?,
+                        subcategory = COALESCE(NULLIF(?, ''), subcategory),
+                        language = COALESCE(NULLIF(?, ''), language),
+                        country = COALESCE(NULLIF(?, ''), country),
+                        status = ?,
+                        notes = COALESCE(NULLIF(?, ''), notes),
+                        sheet_name = COALESCE(NULLIF(?, ''), sheet_name),
+                        chat_id = COALESCE(?, chat_id),
+                        imported_at = ?
+                    WHERE source_key = ?
+                    """,
+                    (
+                        source["title"], source["username"], source["url"], category_id,
+                        source["subcategory"], source["language"], source["country"],
+                        source["status"], source["notes"], source["sheet_name"],
+                        chat_id, imported_at, key,
+                    ),
+                )
+                updated += 1
+            else:
+                connection.execute(
+                    """
+                    INSERT INTO sources (
+                        source_key, chat_id, title, username, telegram_url, category_id,
+                        subcategory, language, country, status, sheet_name,
+                        imported_at, notes
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    """,
+                    (
+                        key, chat_id, source["title"], source["username"], source["url"],
+                        category_id, source["subcategory"], source["language"],
+                        source["country"], source["status"], source["sheet_name"],
+                        imported_at, source["notes"],
+                    ),
+                )
+                added += 1
+        cursor = connection.execute(
+            """
+            INSERT INTO source_imports (
+                file_name, imported_at, categories_created, sources_added,
+                sources_updated, rows_read, warnings_json
+            ) VALUES (?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                Path(path).name, imported_at, len(categories), added, updated,
+                len(sources), json.dumps(warnings),
+            ),
+        )
+        connection.commit()
+    return {
+        "file": str(path),
+        "import_id": cursor.lastrowid,
+        "rows_read": len(sources),
+        "sources_added": added,
+        "sources_updated": updated,
+        "categories_created": len(categories),
+        "categories": categories,
+        "warnings": warnings,
+    }
+
+
+# ---- category-aware scanning ----------------------------------------------
+
+def _telegram_chat_id_for_source(username="", title=""):
+    """Match a stored source to the Telegram chats this session has loaded."""
+    handle = extract_telegram_handle(username).casefold()
+    wanted_title = str(title or "").strip().casefold()
+    for chat_id, entity in _chat_entities.items():
+        entity_username = str(getattr(entity, "username", "") or "").casefold()
+        if handle and entity_username and entity_username == handle:
+            return chat_id
+    if wanted_title:
+        for chat_id, entity in _chat_entities.items():
+            if str(getattr(entity, "title", "") or "").strip().casefold() == wanted_title:
+                return chat_id
+    return None
+
+
+def link_sources_to_chats():
+    """Point every stored source at its Telegram chat id when it is loaded."""
+    linked = 0
+    with closing(sqlite3.connect(DB_PATH)) as connection:
+        connection.row_factory = sqlite3.Row
+        rows = connection.execute(
+            "SELECT source_id, username, title, chat_id FROM sources"
+        ).fetchall()
+        for row in rows:
+            chat_id = _telegram_chat_id_for_source(row["username"], row["title"])
+            if chat_id is not None and chat_id != row["chat_id"]:
+                connection.execute(
+                    "UPDATE sources SET chat_id = ? WHERE source_id = ?",
+                    (chat_id, row["source_id"]),
+                )
+                linked += 1
+        connection.commit()
+    return linked
+
+
+def sources_for_category(category="", source_keys=None):
+    """The stored sources of one category, or an explicit set of sources."""
+    query = "SELECT * FROM sources"
+    params = []
+    conditions = []
+    if category:
+        conditions.append("category_id = (SELECT category_id FROM source_categories WHERE name = ? COLLATE NOCASE)")
+        params.append(category)
+    if source_keys:
+        placeholders = ",".join("?" for _ in source_keys)
+        conditions.append(f"source_key IN ({placeholders})")
+        params.extend(source_keys)
+    if conditions:
+        query += " WHERE " + " AND ".join(conditions)
+    query += " ORDER BY title COLLATE NOCASE"
+    with closing(sqlite3.connect(DB_PATH)) as connection:
+        connection.row_factory = sqlite3.Row
+        return [dict(row) for row in connection.execute(query, params)]
+
+
+def resolve_scan_targets(category="", source_keys=None):
+    """Turn a category (or explicit sources) into the chats a scan should read.
+
+    Category-aware scanning means the scan only walks the channels of the chosen
+    category. Sources that are not in the signed-in Telegram account are reported
+    back instead of being silently skipped.
+    """
+    rows = sources_for_category(category, source_keys) if (category or source_keys) else []
+    chat_ids = []
+    unavailable = []
+    for row in rows:
+        chat_id = row.get("chat_id")
+        if chat_id not in _chat_entities:
+            chat_id = _telegram_chat_id_for_source(row.get("username", ""), row.get("title", ""))
+        if chat_id in _chat_entities:
+            if chat_id not in chat_ids:
+                chat_ids.append(chat_id)
+        else:
+            unavailable.append(row.get("title") or row.get("username") or row.get("source_key"))
+    return {
+        "chat_ids": chat_ids,
+        "unavailable": unavailable,
+        "sources_considered": len(rows),
+    }
+
+
+def compute_source_score(products_found, products_identified, posts_with_offer_detail):
+    """A first-pass source quality score (0-100).
+
+    Identification is most of the score because a channel that names its
+    products is the one that lets the rest of the pipeline work. Offer detail
+    (price, MOQ or photo on the post) and sheer output make up the rest. It is a
+    transparent starting point, stored per scan so it can be refined later
+    without rewriting history.
+    """
+    activity = min(1.0, (products_found or 0) / 10)
+    if not products_found:
+        return None
+    identification = (products_identified or 0) / products_found
+    detail = min(1.0, (posts_with_offer_detail or 0) / products_found)
+    return int(round(55 * identification + 25 * detail + 20 * activity))
+
+
+def record_source_scan_history(scan_id, chat_ids, category=""):
+    """Store what each source contributed to one scan and refresh its score.
+
+    Called once when a scan finishes, so the per-channel intelligence (products
+    found, identified, ads) accumulates in the internal database instead of
+    living only inside the current results.
+    """
+    if not scan_id or not chat_ids:
+        return 0
+    scanned_at = datetime.now(timezone.utc).isoformat()
+    written = 0
+    with closing(sqlite3.connect(DB_PATH)) as connection:
+        connection.row_factory = sqlite3.Row
+        for chat_id in chat_ids:
+            stats = connection.execute(
+                """
+                SELECT COUNT(DISTINCT normalized_product) AS products,
+                       COUNT(*) AS posts,
+                       SUM(CASE WHEN price IS NOT NULL OR image_name IS NOT NULL
+                                THEN 1 ELSE 0 END) AS detailed
+                FROM messages WHERE scan_id = ? AND chat_id = ?
+                """,
+                (scan_id, chat_id),
+            ).fetchone()
+            products_found = int(stats["products"] or 0)
+            detail_posts = int(stats["detailed"] or 0)
+            identified = int(
+                connection.execute(
+                    """
+                    SELECT COUNT(DISTINCT message.normalized_product)
+                    FROM messages AS message
+                    WHERE message.scan_id = ? AND message.chat_id = ?
+                      AND message.review_candidate = 0
+                    """,
+                    (scan_id, chat_id),
+                ).fetchone()[0]
+                or 0
+            )
+            ads = int(
+                connection.execute(
+                    """
+                    SELECT COUNT(DISTINCT ad_id) FROM meta_ads
+                    WHERE scan_id = ? AND product_key IN (
+                        SELECT DISTINCT normalized_product FROM messages
+                        WHERE scan_id = ? AND chat_id = ?
+                    )
+                    """,
+                    (scan_id, scan_id, chat_id),
+                ).fetchone()[0]
+                or 0
+            )
+            suppliers = int(
+                connection.execute(
+                    """
+                    SELECT COUNT(DISTINCT supplier) FROM messages
+                    WHERE scan_id = ? AND chat_id = ?
+                    """,
+                    (scan_id, chat_id),
+                ).fetchone()[0]
+                or 0
+            )
+            score = compute_source_score(products_found, identified, detail_posts)
+            source = connection.execute(
+                """
+                SELECT source_id, source_key FROM sources
+                WHERE chat_id = ? OR source_key IN (
+                    SELECT source_key FROM sources WHERE chat_id = ?
+                ) LIMIT 1
+                """,
+                (chat_id, chat_id),
+            ).fetchone()
+            source_key = source["source_key"] if source else f"chat:{chat_id}"
+            connection.execute(
+                """
+                INSERT INTO source_scan_history (
+                    scan_id, source_key, chat_id, category, products_found,
+                    products_identified, ads_found, suppliers_linked, source_score,
+                    scanned_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ON CONFLICT(scan_id, source_key) DO UPDATE SET
+                    chat_id = excluded.chat_id,
+                    category = excluded.category,
+                    products_found = excluded.products_found,
+                    products_identified = excluded.products_identified,
+                    ads_found = excluded.ads_found,
+                    suppliers_linked = excluded.suppliers_linked,
+                    source_score = excluded.source_score,
+                    scanned_at = excluded.scanned_at
+                """,
+                (
+                    scan_id, source_key, chat_id, category, products_found,
+                    identified, ads, suppliers, score, scanned_at,
+                ),
+            )
+            if source:
+                connection.execute(
+                    """
+                    UPDATE sources SET
+                        last_scanned_at = ?,
+                        products_found = ?,
+                        products_identified = ?,
+                        ads_found = ?,
+                        suppliers_linked = ?,
+                        source_score = COALESCE(?, source_score),
+                        chat_id = ?
+                    WHERE source_id = ?
+                    """,
+                    (
+                        scanned_at, products_found, identified, ads, suppliers,
+                        score, chat_id, source["source_id"],
+                    ),
+                )
+            written += 1
+        connection.commit()
+    return written
+
+
+def category_source_metrics(category_name, scan_id=None):
+    """Per-category counts for the channel tree: channels, products, suppliers."""
+    with closing(sqlite3.connect(DB_PATH)) as connection:
+        connection.row_factory = sqlite3.Row
+        channels = connection.execute(
+            """
+            SELECT COUNT(*) AS total,
+                   SUM(CASE WHEN chat_id IS NULL THEN 0 ELSE 1 END) AS linked,
+                   MAX(last_scanned_at) AS last_scanned
+            FROM sources
+            WHERE category_id = (
+                SELECT category_id FROM source_categories WHERE name = ? COLLATE NOCASE
+            )
+            """,
+            (category_name,),
+        ).fetchone()
+        chat_ids = [
+            row["chat_id"]
+            for row in connection.execute(
+                """
+                SELECT chat_id FROM sources
+                WHERE chat_id IS NOT NULL AND category_id = (
+                    SELECT category_id FROM source_categories WHERE name = ? COLLATE NOCASE
+                )
+                """,
+                (category_name,),
+            )
+        ]
+        products = suppliers = 0
+        if chat_ids and scan_id:
+            placeholders = ",".join("?" for _ in chat_ids)
+            row = connection.execute(
+                f"""
+                SELECT COUNT(DISTINCT normalized_product) AS products,
+                       COUNT(DISTINCT supplier) AS suppliers
+                FROM messages
+                WHERE scan_id = ? AND chat_id IN ({placeholders})
+                """,
+                [scan_id, *chat_ids],
+            ).fetchone()
+            products = int(row["products"] or 0)
+            suppliers = int(row["suppliers"] or 0)
+    return {
+        "channel_count": int(channels["total"] or 0),
+        "linked_channel_count": int(channels["linked"] or 0),
+        "product_count": products,
+        "supplier_count": suppliers,
+        "last_activity": channels["last_scanned"] or "",
+    }
+
+
+def source_catalogue(scan_id=None):
+    """Categories, their channels and their metrics, for the dashboard tree."""
+    with closing(sqlite3.connect(DB_PATH)) as connection:
+        connection.row_factory = sqlite3.Row
+        categories = [
+            dict(row)
+            for row in connection.execute(
+                "SELECT category_id, name, sheet_name, position FROM source_categories ORDER BY position, name COLLATE NOCASE"
+            )
+        ]
+        sources = [dict(row) for row in connection.execute("SELECT * FROM sources ORDER BY title COLLATE NOCASE")]
+        imports = [
+            dict(row)
+            for row in connection.execute(
+                "SELECT file_name, imported_at, sources_added, sources_updated, rows_read FROM source_imports ORDER BY imported_at DESC LIMIT 5"
+            )
+        ]
+    by_category = {}
+    for source in sources:
+        by_category.setdefault(source["category_id"], []).append(source)
+    payload = []
+    for category in categories:
+        channels = by_category.pop(category["category_id"], [])
+        metrics = category_source_metrics(category["name"], scan_id)
+        payload.append(
+            {
+                "name": category["name"],
+                "sheet_name": category["sheet_name"],
+                "channel_count": len(channels),
+                "linked_channel_count": sum(1 for channel in channels if channel.get("chat_id")),
+                "product_count": metrics["product_count"],
+                "supplier_count": metrics["supplier_count"],
+                "last_activity": metrics["last_activity"]
+                or max(
+                    (channel.get("last_scanned_at") or "" for channel in channels), default=""
+                ),
+                "channels": [
+                    {
+                        "source_key": channel["source_key"],
+                        "title": channel["title"],
+                        "username": channel["username"],
+                        "url": channel["telegram_url"],
+                        "chat_id": channel["chat_id"],
+                        "available": channel.get("chat_id") in _chat_entities,
+                        "status": channel["status"],
+                        "source_score": channel.get("source_score"),
+                        "last_scanned_at": channel.get("last_scanned_at"),
+                        "products_found": channel.get("products_found") or 0,
+                        "products_identified": channel.get("products_identified") or 0,
+                        "ads_found": channel.get("ads_found") or 0,
+                    }
+                    for channel in channels
+                ],
+            }
+        )
+    orphaned = [channel for group in by_category.values() for channel in group]
+    total_channels = sum(item["channel_count"] for item in payload)
+    return {
+        "categories": payload,
+        "uncategorised": [
+            {
+                "source_key": channel["source_key"],
+                "title": channel["title"],
+                "username": channel["username"],
+                "url": channel["telegram_url"],
+                "chat_id": channel["chat_id"],
+                "available": channel.get("chat_id") in _chat_entities,
+                "status": channel["status"],
+                "source_score": channel.get("source_score"),
+            }
+            for channel in orphaned
+        ],
+        "imports": imports,
+        "totals": {
+            "categories": len(payload),
+            "channels": total_channels,
+            "linked_channels": sum(item["linked_channel_count"] for item in payload),
+            "scanned_channels": sum(
+                1
+                for item in payload
+                for channel in item["channels"]
+                if channel.get("last_scanned_at")
+            ),
+        },
+    }
 
 
 def parse_trade_details(text):
@@ -2239,7 +3068,7 @@ def telegram_image_extension(message):
     return extension if extension in (".jpg", ".jpeg", ".png", ".webp", ".gif") else ".jpg"
 
 
-async def run_scan(chat_ids, start_date, end_date):
+async def run_scan(chat_ids, start_date, end_date, category=""):
     global _current_scan_id, _current_market, _active_scan_id
     client = await require_authorized_client()
     scan_id = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%S%fZ")
@@ -2267,8 +3096,9 @@ async def run_scan(chat_ids, start_date, end_date):
             """
             INSERT INTO scans (
                 scan_id, start_date, end_date, market, completed_at, status,
-                chat_count, chat_titles_json, chat_ids_json, extractor_version
-            ) VALUES (?, ?, ?, ?, ?, 'running', ?, ?, ?, 3)
+                chat_count, chat_titles_json, chat_ids_json, extractor_version,
+                category
+            ) VALUES (?, ?, ?, ?, ?, 'running', ?, ?, ?, 3, ?)
             """,
             (
                 scan_id,
@@ -2279,6 +3109,7 @@ async def run_scan(chat_ids, start_date, end_date):
                 len(chat_ids),
                 json.dumps([_chat_entities[chat_id].title for chat_id in chat_ids]),
                 json.dumps(chat_ids),
+                str(category or ""),
             ),
         )
         connection.commit()
@@ -2526,6 +3357,9 @@ async def run_scan(chat_ids, start_date, end_date):
     # verdict is stored so the dashboard can show the last verified result
     # instead of an unverified count.
     verify_scan_integrity(scan_id)
+    # Store what each channel contributed, so per-source intelligence and scores
+    # accumulate in the internal database instead of only in this scan's rows.
+    record_source_scan_history(scan_id, chat_ids, category)
     with _state_lock:
         _state.update(
             scanned_messages=scanned,
@@ -6129,6 +6963,18 @@ class Handler(BaseHTTPRequestHandler):
                     """
                 ).fetchall()
             self.send_json({"scans": [dict(scan) for scan in scans]})
+        elif parsed.path == "/api/sources":
+            scan_id = _current_scan_id or (_latest_scan_info or {}).get("scan_id")
+            try:
+                link_sources_to_chats()
+                self.send_json(source_catalogue(scan_id))
+            except (OSError, sqlite3.Error) as error:
+                self.send_json({"error": str(error)}, 500)
+        elif parsed.path == "/api/sources/targets":
+            query = parse_qs(parsed.query)
+            category = query.get("category", [""])[0]
+            source_keys = [key for key in query.get("source", []) if key]
+            self.send_json(resolve_scan_targets(category, source_keys))
         elif parsed.path == "/api/results":
             with sqlite3.connect(DB_PATH) as connection:
                 connection.row_factory = sqlite3.Row
@@ -6647,6 +7493,18 @@ class Handler(BaseHTTPRequestHandler):
                 self.send_json({"error": "Another operation is already running."}, 409)
                 return
             self.send_json({"started": True}, 202)
+        elif parsed.path == "/api/sources/import":
+            path = str(body.get("path", "")).strip()
+            if not path:
+                self.send_json({"error": "Give the path of the .xlsx or .csv export to import."}, 400)
+                return
+            try:
+                summary = import_sources_from_workbook(path)
+            except (OSError, ValueError, zipfile.BadZipFile) as error:
+                self.send_json({"error": str(error)}, 400)
+                return
+            summary["linked"] = link_sources_to_chats()
+            self.send_json(summary)
         elif parsed.path == "/api/scan/cancel":
             if not _state["running"] or _state["job_kind"] != "scan":
                 self.send_json({"error": "There is no active scan to stop."}, 409)
@@ -6909,10 +7767,23 @@ class Handler(BaseHTTPRequestHandler):
             try:
                 start_date = date.fromisoformat(body["start_date"])
                 end_date = date.fromisoformat(body["end_date"])
-                chat_ids = [int(chat_id) for chat_id in body["chat_ids"]]
+                category = str(body.get("category", "") or "")
+                source_keys = [str(key) for key in (body.get("source_ids") or [])]
+                chat_ids = [int(chat_id) for chat_id in (body.get("chat_ids") or [])]
                 market = body["market"]
                 if start_date > end_date:
                     raise ValueError("The start date must be on or before the end date.")
+                if (category or source_keys) and not chat_ids:
+                    # Category-aware scanning: read the category's channels from
+                    # the internal source database instead of scanning everything.
+                    resolved = resolve_scan_targets(category, source_keys)
+                    chat_ids = resolved["chat_ids"]
+                    if not chat_ids:
+                        raise ValueError(
+                            "No channels in %s are available in this Telegram account yet. "
+                            "Refresh Telegram, or tick the channels you want to scan."
+                            % (f"the {category} category" if category else "that selection")
+                        )
                 if not chat_ids:
                     raise ValueError("Select at least one channel or group.")
                 if market not in (
@@ -6934,7 +7805,7 @@ class Handler(BaseHTTPRequestHandler):
             _scan_cancel.clear()
             if not start_job(
                 "Starting the scan…",
-                lambda: run_scan(chat_ids, start_date, end_date),
+                lambda: run_scan(chat_ids, start_date, end_date, category),
                 kind="scan",
             ):
                 self.send_json({"error": "Another operation is already running."}, 409)

@@ -62,3 +62,7 @@ freebuff/
 
 # Credentials
 *.dpapi
+
+# Local scratch (scratch scripts, throwaway database copies) and database backups
+.build/
+backup/
