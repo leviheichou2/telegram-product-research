@@ -16,6 +16,7 @@ import json
 import math
 import mimetypes
 import os
+import queue
 import re
 import socket
 import sqlite3
@@ -194,6 +195,7 @@ _state = {
     "login_stage": "phone",
     "scanned_messages": 0,
     "products_found": 0,
+    "products_detected": 0,
     "chat_index": 0,
     "chat_total": 0,
     "current_chat": "",
@@ -2247,10 +2249,13 @@ async def run_scan(chat_ids, start_date, end_date):
     range_end = datetime.combine(end_date + timedelta(days=1), datetime.min.time(), timezone.utc)
     scanned = 0
     matched = 0
+    seen_products = set()
+    pending_identify = []
     with _state_lock:
         _state.update(
             scanned_messages=0,
             products_found=0,
+            products_detected=0,
             chat_index=0,
             chat_total=len(chat_ids),
             current_chat="",
@@ -2279,6 +2284,10 @@ async def run_scan(chat_ids, start_date, end_date):
         connection.commit()
         _active_scan_id = scan_id
         was_cancelled = False
+        # Identification starts with the scan, not after it: the pool is ready
+        # before the first product is written, so every offer post can be named
+        # the moment it is discovered.
+        start_progressive_identification(scan_id)
         update_job(
             "Loading the downloaded product recognizer. Message-count progress starts when it is ready."
         )
@@ -2357,6 +2366,12 @@ async def run_scan(chat_ids, start_date, end_date):
                             normalized = f"review offer {chat_id} {message.id}"
                         if not normalized:
                             continue
+                        if normalized not in seen_products:
+                            seen_products.add(normalized)
+                            if review_candidate:
+                                # Unnamed offer posts are the ones that need a
+                                # reader; named ones are already identified.
+                                pending_identify.append(normalized)
                         description = separate_description(product_name, text)
                         if (
                             reaction_count >= 100
@@ -2450,6 +2465,14 @@ async def run_scan(chat_ids, start_date, end_date):
                             )
                 if scanned % 20 == 0:
                     connection.commit()
+                    if pending_identify:
+                        # Name what has already been found while the scan is
+                        # still walking the channels: this is what makes the
+                        # dashboard fill in progressively instead of at the end.
+                        enqueue_identification(scan_id, pending_identify)
+                        pending_identify = []
+                    with _state_lock:
+                        _state["products_detected"] = len(seen_products)
                 with _state_lock:
                     _state.update(
                         scanned_messages=scanned,
@@ -2462,19 +2485,28 @@ async def run_scan(chat_ids, start_date, end_date):
             if _scan_cancel.is_set():
                 was_cancelled = True
             connection.commit()
+            if pending_identify:
+                enqueue_identification(scan_id, pending_identify)
+                pending_identify = []
+            with _state_lock:
+                _state["products_detected"] = len(seen_products)
             if was_cancelled:
                 break
         status = "cancelled" if was_cancelled else "completed"
         connection.execute(
             """
             UPDATE scans SET completed_at = ?, status = ?, scanned_messages = ?,
-                products_found = ? WHERE scan_id = ?
+                products_found = (
+                    SELECT COUNT(DISTINCT normalized_product) FROM messages
+                    WHERE scan_id = ?
+                )
+            WHERE scan_id = ?
             """,
             (
                 datetime.now(timezone.utc).isoformat(),
                 status,
                 scanned,
-                matched,
+                scan_id,
                 scan_id,
             ),
         )
@@ -2484,14 +2516,21 @@ async def run_scan(chat_ids, start_date, end_date):
         f"Scan {'stopped' if was_cancelled else 'finished'}: checked {scanned} messages "
         f"and flagged {matched} possible offer posts for review."
     )
-    # Name the offer posts that shipped a photo, so their scores, Ad Library
-    # lookups and competitor price checks can run without further input.
+    # Give the identification pool a bounded window to finish the products it
+    # already holds, then let the post-scan sweeps pick up anything that is
+    # still unnamed. A slow reader can therefore delay a product, never drop it.
+    drain = finish_progressive_identification(scan_id)
     start_photo_identification(scan_id)
     start_web_research(scan_id)
+    # Validation check: every product the scan wrote must be in the table. The
+    # verdict is stored so the dashboard can show the last verified result
+    # instead of an unverified count.
+    verify_scan_integrity(scan_id)
     with _state_lock:
         _state.update(
             scanned_messages=scanned,
             products_found=matched,
+            products_detected=len(seen_products),
             cancel_requested=False,
         )
     _active_scan_id = None
@@ -3546,13 +3585,14 @@ def purge_weak_product_identifications():
             """
             DELETE FROM product_identifications
             WHERE method = 'photo'
-              AND confidence < _PHOTO_SAVE_MINIMUM_SCORE
+              AND confidence < ?
               AND product_key NOT IN (
                   SELECT DISTINCT normalized_product
                   FROM messages
                   WHERE normalized_product != ''
               )
             """,
+            (_PHOTO_SAVE_MINIMUM_SCORE,),
         )
         connection.commit()
 
@@ -4829,15 +4869,882 @@ def calculate_test_priority(telegram_score, evidence):
     return score, components, len(components) - 1
 
 
-def load_results():
-    # One-time retroactive cleanup: drop weak photo identifications that old code
-    # saved at 0.30 but that must never be the key an Ad Library lookup runs on.
-    # Safe to call repeatedly — it only touches photo rows below the save floor
-    # that no longer correspond to a live message product.
+# Weak photo names that earlier code saved at 0.30 must never be the key an
+# Ad Library lookup runs on. The cleanup is idempotent, so it runs once per
+# scan instead of on every results poll.
+_purged_identifications_lock = threading.Lock()
+_purged_identifications_for = set()
+
+
+def purge_weak_product_identifications_once(scan_id):
+    with _purged_identifications_lock:
+        if scan_id in _purged_identifications_for:
+            return False
+        _purged_identifications_for.add(scan_id)
     purge_weak_product_identifications()
+    return True
+
+
+# ---------------------------------------------------------------------------
+# Product intelligence: status, ad matching, pricing, trend and gallery.
+#
+# Every scan produces offer posts, and the dashboard asks the same four
+# questions about each product it turns into: what state is it in, which ads
+# really belong to it, what is it worth, and which images back it up. The
+# answers are computed here so the results table and the product page can never
+# disagree about the same product.
+# ---------------------------------------------------------------------------
+
+PRODUCT_STATUS_IDENTIFIED = "identified"
+PRODUCT_STATUS_AWAITING_REVIEW = "awaiting_review"
+PRODUCT_STATUS_PROCESSING = "processing"
+PRODUCT_STATUS_FAILED = "failed"
+
+PRODUCT_STATUS_LABELS = {
+    PRODUCT_STATUS_IDENTIFIED: "Identified",
+    PRODUCT_STATUS_AWAITING_REVIEW: "Awaiting review",
+    PRODUCT_STATUS_PROCESSING: "Identifying\u2026",
+    PRODUCT_STATUS_FAILED: "Failed",
+}
+
+# An ad belongs in a product's Exact Ads section only when the product's own
+# evidence is inside the ad itself: its model number, its brand, its variant and
+# most of its name. Category overlap alone — the same search result, a
+# competitor, or another model of the same line — is not evidence, so those ads
+# go to the Similar Ads section instead. This is what keeps category
+# contamination out of the primary ads section.
+EXACT_AD_MINIMUM_SCORE = 0.72
+SIMILAR_AD_MINIMUM_SCORE = 0.18
+
+_AD_MATCH_STOPWORDS = frozenset(
+    word.casefold()
+    for word in (
+        "and for with from this that new original high quality best hot sale free "
+        "shipping wholesale dropshipping buy price shop online official store brand "
+        "premium the a an of to in on at by"
+    ).split()
+) | frozenset(str(word).casefold() for word in PRODUCT_NAME_STOPWORDS)
+
+# Product variants change the product itself: "Item1001 Pro" is a different
+# product from "Item1001", so an ad that names a variant the product does not
+# have can never be an exact match.
+_PRODUCT_VARIANT_WORDS = frozenset(
+    "pro plus max mini lite ultra se xl xxl air 5g 4g note prime advanced edition "
+    "version gen".split()
+)
+
+
+def _match_tokens(text):
+    """Lower-cased, punctuation-free tokens worth matching on."""
+    tokens = []
+    for raw in re.findall(r"[a-z0-9]+", str(text or "").casefold()):
+        if len(raw) < 2 or raw in _AD_MATCH_STOPWORDS:
+            continue
+        tokens.append(raw)
+    return tokens
+
+
+def product_match_profile(name, brand="", attributes=None):
+    """The name, brand, model and variant evidence an ad must contain.
+
+    ``model_tokens`` are the alphanumeric parts of the product name ("1001",
+    "a12", "s24"). When the product has them, an ad that does not name them is a
+    different product, whatever else it shares.
+    """
+    tokens = _match_tokens(name)
+    if not brand and isinstance(attributes, dict):
+        values = attributes.get("brand") or attributes.get("Brand")
+        if values:
+            brand = values[0] if isinstance(values, (list, tuple)) else values
+    brand = str(brand or "")
+    model_tokens = {token for token in tokens if any(ch.isdigit() for ch in token)}
+    variant_tokens = {token for token in tokens if token in _PRODUCT_VARIANT_WORDS}
+    brand_tokens = set(_match_tokens(brand))
+    name_tokens = [
+        token
+        for token in tokens
+        if token not in model_tokens
+        and token not in variant_tokens
+        and token not in brand_tokens
+    ]
+    # When the name is nothing but a model number ("Item1001"), that model number
+    # is the product's identifying token, so it must not also be counted against
+    # the name-coverage score that decides an exact match.
+    identifying_tokens = name_tokens or [
+        token for token in tokens if token not in variant_tokens and token not in brand_tokens
+    ]
+    return {
+        "name": str(name or ""),
+        "brand": brand,
+        "tokens": tokens,
+        "name_tokens": identifying_tokens,
+        "model_tokens": model_tokens,
+        "variant_tokens": variant_tokens,
+        "brand_tokens": brand_tokens,
+    }
+
+
+def score_meta_ad(profile, ad):
+    """Score one Ad Library row against one product.
+
+    Returns ``{"level", "score", "reasons", "missing"}``. ``level`` is
+    ``"exact"`` when the ad names this product, ``"similar"`` when it shares
+    real evidence with it (brand, keywords, packaging wording) and
+    ``"unrelated"`` when the only thing it shares is the category.
+    """
+    haystack = " ".join(
+        str(ad.get(key) or "")
+        for key in (
+            "creative_title",
+            "creative_text",
+            "page_name",
+            "link_url",
+            "link_caption",
+            "snapshot_url",
+        )
+    )
+    hay_tokens = set(_match_tokens(haystack))
+    normalized_hay = " ".join(_match_tokens(haystack))
+
+    missing_models = sorted(profile["model_tokens"] - hay_tokens)
+    ad_variants = hay_tokens & _PRODUCT_VARIANT_WORDS
+    extra_variants = sorted(ad_variants - profile["variant_tokens"])
+    missing_variants = sorted(profile["variant_tokens"] - hay_tokens)
+    brand_required = bool(profile["brand_tokens"])
+    brand_hit = brand_required and profile["brand_tokens"] <= hay_tokens
+
+    name_tokens = profile["name_tokens"]
+    matched = [token for token in name_tokens if token in hay_tokens]
+    coverage = len(matched) / len(name_tokens) if name_tokens else 0.0
+    full_name = " ".join(_match_tokens(profile["name"]))
+    full_hit = len(full_name) > 3 and full_name in normalized_hay
+
+    weights = []
+    if brand_required:
+        weights.append((0.35, 1.0 if brand_hit else 0.0))
+    if profile["model_tokens"]:
+        weights.append((0.45, 1.0 if not missing_models else 0.0))
+    weights.append((0.2 if profile["model_tokens"] else 0.4, coverage))
+    total_weight = sum(weight for weight, _ in weights) or 1.0
+    score = sum(weight * value for weight, value in weights) / total_weight
+    if full_hit:
+        score = min(1.0, score + 0.15)
+
+    exact = (
+        score >= EXACT_AD_MINIMUM_SCORE
+        and not missing_models
+        and not extra_variants
+        and not missing_variants
+        and (brand_hit or not brand_required)
+    )
+
+    reasons = []
+    if exact:
+        if full_hit:
+            reasons.append(f"Names this exact product: {profile['name']}")
+        else:
+            reasons.append("Names this exact product")
+        if brand_hit:
+            reasons.append(f"Brand confirmed: {profile['brand']}")
+        if matched:
+            reasons.append("Product keywords: " + ", ".join(matched[:5]))
+    else:
+        if extra_variants:
+            reasons.append("Different variant of the same line: " + ", ".join(extra_variants))
+        if missing_variants:
+            reasons.append("Does not name the product variant: " + ", ".join(missing_variants))
+        if missing_models:
+            reasons.append("Different model, does not name: " + ", ".join(missing_models))
+        if brand_hit:
+            reasons.append(f"Same brand: {profile['brand']}")
+        if matched:
+            reasons.append("Shares product keywords: " + ", ".join(matched[:5]))
+        if not reasons:
+            reasons.append(
+                "Same category search result only: no shared product evidence"
+                if score < SIMILAR_AD_MINIMUM_SCORE
+                else "Returned for this product's search, but does not name it"
+            )
+
+    if exact:
+        level = "exact"
+    else:
+        # Everything that is not an exact match belongs in the similar section:
+        # related products, competitors and same-category results are all useful
+        # there, and the reasons say which one it is. Nothing overlaps with the
+        # exact section.
+        level = "similar"
+
+    return {
+        "level": level,
+        "score": round(score, 3),
+        "reasons": reasons,
+        "missing": missing_models + missing_variants + extra_variants,
+    }
+
+
+def classify_product_ads(profile, ads):
+    """Split one product's Ad Library rows into exact and similar ads.
+
+    An exact ad names this product; every other row is a similar-product ad
+    (related product, competitor or same-category result) and says why. The two
+    sections can therefore never mix, and a repeated ad row is only counted
+    once.
+    """
+    exact = []
+    similar = []
+    seen = set()
+    for ad in ads or []:
+        row = dict(ad)
+        ad_id = str(row.get("ad_id") or "")
+        if ad_id and ad_id in seen:
+            continue
+        if ad_id:
+            seen.add(ad_id)
+        match = score_meta_ad(profile, ad)
+        row["match"] = match
+        if match["level"] == "exact":
+            exact.append(row)
+        else:
+            similar.append(row)
+    return exact, similar
+
+
+def _median(values):
+    ordered = sorted(value for value in values if value is not None)
+    if not ordered:
+        return None
+    middle = len(ordered) // 2
+    if len(ordered) % 2:
+        return ordered[middle]
+    return (ordered[middle - 1] + ordered[middle]) / 2
+
+
+def product_pricing_estimate(lowest_price, currency, price_unit, listings, offers=None):
+    """Estimate the buy cost, the likely selling price and the margin.
+
+    The supplier's own lowest listed price is the cost estimate. The selling
+    price estimate is the median of the competitor pages that were actually
+    read for this product in the same currency, so it is always traceable to a
+    source. Every value is an estimate, and the basis is returned with it.
+
+    When no two offers agree on a currency (which is common on Arabic supplier
+    posts, where the currency is in the image or the caption) the cheapest priced
+    offer is still used as the cost, and the basis says the currency was not
+    detected rather than pretending the number is comparable.
+    """
+    cost = lowest_price if lowest_price is not None else None
+    cost_basis = "Cost: lowest supplier price in this scan" if cost is not None else None
+    if cost is None and offers:
+        priced = [offer for offer in offers if offer.get("price") is not None]
+        if priced:
+            cheapest = min(priced, key=lambda offer: offer["price"])
+            cost = cheapest["price"]
+            currency = cheapest.get("currency") or currency
+            price_unit = cheapest.get("price_unit") or price_unit
+            cost_basis = "Cost: cheapest listed supplier price (currency not detected)"
+    selling_prices = [
+        listing.get("price")
+        for listing in listings or []
+        if listing.get("price") is not None
+        and (currency is None or not listing.get("currency") or listing.get("currency") == currency)
+    ]
+    selling = _median(selling_prices)
+    margin_percent = None
+    margin_value = None
+    if selling and cost is not None and selling > 0:
+        margin_value = round(selling - cost, 2)
+        margin_percent = round((selling - cost) / selling * 100, 1)
+    basis = []
+    if cost_basis:
+        basis.append(cost_basis)
+    if selling is not None:
+        basis.append(f"Selling price: median of {len(selling_prices)} competitor page(s)")
+    if margin_percent is None:
+        basis.append("Margin needs a comparable competitor price")
+    return {
+        "estimated_cost": cost,
+        "estimated_selling_price": selling,
+        "estimated_margin_value": margin_value,
+        "profit_margin_percent": margin_percent,
+        "currency": currency,
+        "price_unit": price_unit,
+        "selling_price_samples": len(selling_prices),
+        "basis": "; ".join(basis),
+        "warning": "Estimates from listed prices, not verified sales or verified costs.",
+    }
+
+
+_TREND_DIRECTION_SCORES = {"rising": 78, "stable": 55, "falling": 28}
+
+
+def product_trend_estimate(research, age_days, period_days, oldest_ad_days, exact_ads):
+    """A 0-100 demand-trend estimate with the evidence behind it.
+
+    Prefers the trend direction recorded for the product in market research.
+    When that is not entered yet, the freshly posted supplier offers carry the
+    estimate, and a long-running active ad adds to it because an advertiser
+    that keeps paying for the same product is showing real demand.
+    """
+    research = research or {}
+    direction = str(research.get("trend_direction") or "unknown").casefold()
+    basis = []
+    if direction in _TREND_DIRECTION_SCORES:
+        score = _TREND_DIRECTION_SCORES[direction]
+        basis.append(f"Research trend: {direction}")
+    else:
+        score = int(max(0, min(100, round(100 * (1 - (age_days or 0) / max(1, period_days))))))
+        basis.append("Freshness of the newest supplier post")
+    if oldest_ad_days:
+        if oldest_ad_days >= 30:
+            score = min(100, score + 12)
+            basis.append(f"An active ad has run {oldest_ad_days} days")
+        elif oldest_ad_days >= 14:
+            score = min(100, score + 8)
+            basis.append(f"An active ad has run {oldest_ad_days} days")
+        elif oldest_ad_days >= 7:
+            score = min(100, score + 4)
+            basis.append(f"An active ad has run {oldest_ad_days} days")
+    if exact_ads:
+        basis.append(f"{len(exact_ads)} exact-match active ad(s)")
+    return {"trend_score": score, "trend_direction": direction, "basis": "; ".join(basis)}
+
+
+def product_gallery(offers, ads, listings=None, limit=24):
+    """Every image that backs this product, in the order a buyer would want them.
+
+    Supplier post photos come first (they are the real product as shipped),
+    then the exact-match ad creatives, then similar-ad creatives and finally
+    competitor page images. One image appears once.
+    """
+    items = []
+    seen = set()
+
+    def add(url, source, label):
+        url = str(url or "").strip()
+        if not url or url in seen or len(items) >= limit:
+            return
+        seen.add(url)
+        items.append({"url": url, "source": source, "label": label})
+
+    for offer in offers or []:
+        add(offer.get("image"), "supplier", offer.get("supplier") or "Supplier photo")
+    for ad in ads or []:
+        label = ad.get("page_name") or "Advertiser"
+        add(ad.get("image_url"), "ad", label)
+        add(ad.get("thumbnail_url"), "ad", label)
+        add(ad.get("video_url"), "ad_video", label)
+    for listing in listings or []:
+        add(listing.get("image_url"), "competitor", listing.get("title") or "Competitor page")
+    return items
+
+
+def product_status_for(scan_id, product_key, candidate_only, identification):
+    """The explicit state of one product row, never an implicit "unknown".
+
+    A named product is identified. An unnamed one is either still being read
+    (processing), has already failed both readers (failed, with the reason), or
+    is waiting for a reader (awaiting review) — and it is shown in the table in
+    every one of those states instead of being hidden.
+    """
+    if not candidate_only:
+        if identification and identification.get("method") == "extractor":
+            return PRODUCT_STATUS_IDENTIFIED, ""
+        return PRODUCT_STATUS_IDENTIFIED, ""
+    with _identify_lock:
+        same_scan = _identify_state.get("scan_id") == scan_id
+        if same_scan and product_key in _identify_state.get("active", set()):
+            return PRODUCT_STATUS_PROCESSING, "Queued for identification"
+        failure = _identify_state.get("failed", {}).get(product_key) if same_scan else None
+    if identification:
+        return PRODUCT_STATUS_IDENTIFIED, ""
+    if failure:
+        return PRODUCT_STATUS_FAILED, failure
+    return PRODUCT_STATUS_AWAITING_REVIEW, "Waiting for the web or photo reader"
+
+
+def identification_source(identification, candidate_only):
+    if identification and identification.get("method"):
+        return identification["method"]
+    return "extractor" if not candidate_only else ""
+
+
+def scan_integrity(scan_id, products, deep=False):
+    """Compare what the scan detected with what the table is showing.
+
+    Returns the counts plus any issue, so a scan can never quietly lose a
+    product between the database and the results table. ``detected`` is the
+    number of distinct products the scan recorded, ``returned`` is the number of
+    table rows built from them.
+
+    The comparison against the scan record is cheap and is what the page shows
+    on every refresh. ``deep`` re-counts the products straight from the messages
+    table instead; that is a full scan of the scan's rows, so it runs once when
+    a scan finishes rather than on every poll.
+    """
+    products = products or []
+    returned = len(products)
+    recorded = 0
+    scanned_messages = 0
+    scan_status = ""
+    counted = None
+    if scan_id:
+        with closing(sqlite3.connect(DB_PATH)) as connection:
+            row = connection.execute(
+                "SELECT products_found, scanned_messages, status FROM scans WHERE scan_id = ?",
+                (scan_id,),
+            ).fetchone()
+            if row:
+                recorded = int(row[0] or 0)
+                scanned_messages = int(row[1] or 0)
+                scan_status = str(row[2] or "")
+            if deep:
+                deep_row = connection.execute(
+                    """
+                    SELECT COUNT(DISTINCT normalized_product)
+                    FROM messages WHERE scan_id = ?
+                    """,
+                    (scan_id,),
+                ).fetchone()
+                counted = int(deep_row[0] or 0)
+    live = scan_status == "running"
+    detected = returned if counted is None else int(counted)
+    issues = []
+    if counted is not None and detected != returned:
+        issues.append(
+            f"{detected} product(s) were detected but {returned} row(s) are shown."
+        )
+    empty_offers = [product["key"] for product in products if not product.get("offers")]
+    if empty_offers:
+        issues.append(
+            f"{len(empty_offers)} row(s) have no offer attached and need re-scanning."
+        )
+    return {
+        "scan_id": scan_id,
+        "detected": detected,
+        "returned": returned,
+        "recorded_in_scan": recorded,
+        "scanned_messages": scanned_messages,
+        "scan_status": scan_status,
+        "live": live,
+        "checked_from_messages": counted is not None,
+        "consistent": not issues,
+        "issues": issues,
+    }
+
+
+_integrity_lock = threading.Lock()
+_integrity_reports = {}
+
+
+def verify_scan_integrity(scan_id):
+    """Run the deep scan-to-table check and remember the verdict.
+
+    Called once when a scan finishes, which is when the answer matters and when
+    re-counting the scan's rows is affordable. The verdict is stored so the
+    results API can show the last real check instead of an unverified number.
+    """
+    report = scan_integrity(scan_id, load_results(), deep=True)
+    with _integrity_lock:
+        _integrity_reports[scan_id] = report
+    if not report["consistent"]:
+        print(
+            f"Scan integrity warning for {scan_id}: " + " ".join(report["issues"]),
+            flush=True,
+        )
+    return report
+
+
+def last_integrity_report(scan_id):
+    if not scan_id:
+        return None
+    with _integrity_lock:
+        return _integrity_reports.get(scan_id)
+
+
+def count_products_by_status(products):
+    counts = {
+        PRODUCT_STATUS_IDENTIFIED: 0,
+        PRODUCT_STATUS_PROCESSING: 0,
+        PRODUCT_STATUS_AWAITING_REVIEW: 0,
+        PRODUCT_STATUS_FAILED: 0,
+    }
+    for product in products or []:
+        status = product.get("status") or PRODUCT_STATUS_AWAITING_REVIEW
+        counts[status] = counts.get(status, 0) + 1
+    counts["total"] = len(products or [])
+    return counts
+
+
+# ---------------------------------------------------------------------------
+# Progressive identification.
+#
+# Identification used to start only after the scan had finished, so products sat
+# unnamed for the whole run and were read one at a time. Now every unnamed offer
+# post is handed to a worker pool the moment the scan writes it, and the pool
+# names products while the scan is still walking the channels, so results appear
+# progressively instead of all at the end.
+# ---------------------------------------------------------------------------
+
+PROGRESSIVE_IDENTIFY_WORKERS = 2
+PROGRESSIVE_IDENTIFY_DRAIN_SECONDS = 45.0
+
+_identify_lock = threading.Lock()
+_identify_queue = None
+_identify_threads = []
+_identify_state = {
+    "running": False,
+    "scan_id": None,
+    "workers": 0,
+    "active": set(),
+    "done": set(),
+    "failed": {},
+    "identified": 0,
+    "queued": 0,
+    "message": "Not started",
+}
+
+
+def _photo_preview(scan_id, product_key):
+    """Read a product's photos without saving anything. None when unreadable."""
+    try:
+        return identify_product_from_image(
+            scan_id, product_key, minimum_score=0.30, save=False
+        )
+    except (LookupError, ValueError, RuntimeError, OSError):
+        return None
+
+
+def _photo_preview_is_save_worthy(preview):
+    """Whether a lenient photo preview would have passed the strict save rules.
+
+    The preview path is deliberately lenient (it ranks names for the user to
+    pick from), so its winner may be a weak guess. Agreement between sources may
+    only be built on a preview that would also have saved on its own.
+    """
+    if not preview:
+        return False
+    choices = preview.get("choices") or []
+    score = float(preview.get("score") or 0)
+    if score < max(AUTO_IDENTIFY_MINIMUM_SCORE, _PHOTO_SAVE_MINIMUM_SCORE):
+        return False
+    runner_up = float(choices[1]["score"]) if len(choices) > 1 else 0.0
+    return score - runner_up >= PHOTO_IDENTIFICATION_MIN_MARGIN
+
+
+def identify_product_progressive(scan_id, product_key):
+    """Identify one product with both readers and cross-check their answers.
+
+    Accuracy layers, in order:
+
+    1. The web reader reads the supplier's own words. A name at or above the
+       auto-save floor is cross-checked against the photos: when both readers
+       name the same product, that agreement raises the saved confidence, and
+       when the photo disagrees the conflict is recorded on the product instead
+       of being hidden.
+    2. A web name between the research floor and the auto-save floor is only
+       saved when the photos independently agree on it, so a borderline web
+       guess can never become a product name on its own.
+    3. When the web cannot name the offer at all, the photo reader names it
+       under the strict save rules (agreement across photos, a clear margin and
+       a confident winner).
+
+    Returns ``{"saved": ...}``. A product that no reader can name honestly comes
+    back unsaved, with both reasons, so its row shows "Failed" instead of a
+    confident wrong name.
+    """
+    web_result = None
+    web_error = ""
+    try:
+        web_result = identify_product_from_web(scan_id, product_key, save=False)
+    except (LookupError, ValueError, RuntimeError, OSError) as error:
+        web_error = str(error)
+
+    if web_result is not None:
+        web_name = normalize_product(web_result.get("name"))
+        web_score = float(web_result.get("score") or 0)
+        preview = _photo_preview(scan_id, product_key)
+        photo_ok = _photo_preview_is_save_worthy(preview)
+        photo_name = normalize_product(preview["name"]) if photo_ok else ""
+        agreed = bool(web_name and photo_name and web_name == photo_name)
+        high_confidence = web_score >= WEB_AUTO_SAVE_MINIMUM_CONFIDENCE
+        if agreed:
+            confidence = min(
+                1.0,
+                0.5
+                + 0.25 * web_score
+                + 0.25 * float(preview.get("score") or 0),
+            )
+            return _save_progressive_name(
+                scan_id,
+                product_key,
+                web_result,
+                method="web+photo",
+                confidence=confidence,
+                alternatives=[
+                    {"name": web_result["name"], "score": web_score, "source": "web"},
+                    {"name": preview["name"], "score": preview["score"], "source": "photo"},
+                ],
+                note="The web reader and the photo reader named the same product.",
+            )
+        if not high_confidence:
+            return {
+                "saved": False,
+                "key": product_key,
+                "name": web_result.get("name"),
+                "score": web_score,
+                "error": (
+                    f"The web named this offer “{web_result.get('name')}” "
+                    f"({web_score:.0%}) but the photos did not confirm it, so it was "
+                    "left for review."
+                ),
+            }
+        alternatives = []
+        if preview is not None:
+            alternatives.append(
+                {
+                    "name": preview["name"],
+                    "score": preview["score"],
+                    "source": "photo",
+                    "note": "photo reader disagreed",
+                }
+            )
+        note = (
+            "The photo reader disagreed; the web name was kept at its own confidence."
+            if alternatives
+            else ""
+        )
+        return _save_progressive_name(
+            scan_id,
+            product_key,
+            web_result,
+            method=WEB_RESEARCH_SOURCE,
+            confidence=web_score,
+            alternatives=alternatives,
+            note=note,
+        )
+
+    # No usable web answer: fall back to the strict photo save path, exactly as
+    # the post-scan sweep does.
+    try:
+        result = identify_product_from_image(
+            scan_id, product_key, minimum_score=AUTO_IDENTIFY_MINIMUM_SCORE
+        )
+    except (LookupError, ValueError, RuntimeError, OSError) as error:
+        return {
+            "saved": False,
+            "key": product_key,
+            "error": (
+                f"Web research: {web_error or 'no usable result'}. "
+                f"Photo reading: {error}"
+            ),
+        }
+    if web_error:
+        result["note"] = (
+            f"Web research could not name this offer ({web_error}); "
+            "it was named from the photo instead."
+        )
+    return result
+
+
+def _save_progressive_name(scan_id, product_key, web_result, *, method, confidence, alternatives, note=""):
+    """Save a cross-checked name and the details that came with it."""
+    new_key = identify_product(
+        scan_id,
+        product_key,
+        web_result["name"],
+        method=method,
+        confidence=confidence,
+        alternatives=alternatives,
+        specs=(web_result.get("details") or {}).get("specs"),
+    )
+    details = web_result.get("details")
+    if isinstance(details, dict):
+        save_product_details(scan_id, new_key, WEB_RESEARCH_SOURCE, "", details)
+    return {
+        "saved": True,
+        "key": new_key,
+        "previous_key": product_key,
+        "name": web_result["name"],
+        "score": confidence,
+        "source": method,
+        "note": note,
+        "alternatives": alternatives,
+    }
+
+
+def start_progressive_identification(scan_id, workers=PROGRESSIVE_IDENTIFY_WORKERS):
+    """Start the identification workers for one scan, before it walks the chats."""
+    global _identify_queue, _identify_threads
+    if not scan_id:
+        return False
+    with _identify_lock:
+        if _identify_state["running"] and _identify_state["scan_id"] == scan_id:
+            return False
+        _identify_queue = queue.Queue()
+        _identify_threads = []
+        _identify_state.update(
+            running=True,
+            scan_id=scan_id,
+            workers=workers,
+            active=set(),
+            done=set(),
+            failed={},
+            identified=0,
+            queued=0,
+            message="Waiting for the first products to identify…",
+        )
+        work_queue = _identify_queue
+    for index in range(max(1, workers)):
+        thread = threading.Thread(
+            target=run_identification_worker,
+            args=(scan_id, work_queue),
+            name=f"identify-{index}",
+            daemon=True,
+        )
+        thread.start()
+        with _identify_lock:
+            _identify_threads.append(thread)
+    return True
+
+
+def enqueue_identification(scan_id, product_keys):
+    """Queue products for identification the instant the scan discovers them."""
+    keys = [str(key) for key in (product_keys or []) if key]
+    if not keys:
+        return 0
+    with _identify_lock:
+        if not _identify_state["running"] or _identify_state["scan_id"] != scan_id:
+            return 0
+        work_queue = _identify_queue
+        fresh = []
+        for key in keys:
+            if key in _identify_state["active"] or key in _identify_state["done"]:
+                continue
+            _identify_state["active"].add(key)
+            fresh.append(key)
+        _identify_state["queued"] += len(fresh)
+        if _identify_state["active"]:
+            _identify_state["message"] = (
+                f"Identifying {len(_identify_state['active'])} product(s) while the scan runs…"
+            )
+    for key in fresh:
+        work_queue.put(key)
+    return len(fresh)
+
+
+def run_identification_worker(scan_id, work_queue):
+    """Name queued products until the queue is closed.
+
+    One failure never stops the pool, and every failure is recorded so the row
+    can show "Failed" with the reason instead of an unexplained blank identity.
+    """
+    while True:
+        product_key = work_queue.get()
+        saved = False
+        try:
+            if product_key is None:
+                return
+            result = identify_product_progressive(scan_id, product_key)
+            saved = bool(result.get("saved"))
+            with _identify_lock:
+                _identify_state["active"].discard(product_key)
+                if saved:
+                    _identify_state["done"].add(product_key)
+                    _identify_state["identified"] += 1
+                    _identify_state["failed"].pop(product_key, None)
+                    _identify_state["message"] = (
+                        f"Identified {_identify_state['identified']} product(s) so far "
+                        "while the scan runs."
+                    )
+                else:
+                    _identify_state["failed"][product_key] = str(
+                        result.get("error")
+                        or "The web and photo readers could not name this offer."
+                    )[:300]
+                    _identify_state["message"] = (
+                        f"{len(_identify_state['failed'])} product(s) could not be named "
+                        "automatically and await review."
+                    )
+        except Exception as error:  # one bad product must not stop the pool
+            with _identify_lock:
+                _identify_state["active"].discard(product_key)
+                _identify_state["failed"][product_key] = str(error)[:300]
+        finally:
+            work_queue.task_done()
+        if saved:
+            # A newly named product can be searched in the Ad Library right away,
+            # so its ads land while the scan is still running.
+            try:
+                start_meta_ads_sync(scan_id, load_results())
+            except Exception:
+                pass
+
+
+def finish_progressive_identification(scan_id, timeout=PROGRESSIVE_IDENTIFY_DRAIN_SECONDS):
+    """Let the workers finish what they already hold, then stop them.
+
+    Anything the workers have not reached before the timeout is left to the
+    post-scan sweeps, which pick it up from the database, so a product is never
+    dropped because a reader was slow.
+    """
+    global _identify_queue
+    with _identify_lock:
+        if not _identify_state["running"] or _identify_state["scan_id"] != scan_id:
+            return {"identified": 0, "pending": 0, "drained": True}
+        work_queue = _identify_queue
+        workers = _identify_state["workers"]
+        threads = list(_identify_threads)
+    for _ in range(max(1, workers)):
+        work_queue.put(None)
+    deadline = time.monotonic() + max(0.0, timeout)
+    for thread in threads:
+        remaining = deadline - time.monotonic()
+        if remaining <= 0:
+            break
+        thread.join(remaining)
+    drained = not any(thread.is_alive() for thread in threads)
+    with _identify_lock:
+        identified = _identify_state["identified"]
+        pending = len(_identify_state["active"])
+        _identify_state["running"] = not drained
+        _identify_state["message"] = (
+            f"{identified} product(s) were named while the scan ran."
+            if drained
+            else f"{pending} product(s) are still being identified in the background."
+        )
+    _identify_queue = None if drained else work_queue
+    return {"identified": identified, "pending": pending, "drained": drained}
+
+
+def progressive_identification_pending(scan_id):
+    """How many products are queued or being read right now."""
+    with _identify_lock:
+        if _identify_state["scan_id"] != scan_id:
+            return 0
+        return len(_identify_state["active"])
+
+
+def progressive_identification_summary(scan_id):
+    with _identify_lock:
+        state = dict(_identify_state)
+        active = set(state.get("active") or ())
+        failures = len(state.get("failed") or {})
+        identified = state.get("identified", 0)
+        message = state.get("message", "")
+    matches_scan = state.get("scan_id") == scan_id
+    return {
+        "running": bool(state.get("running") and matches_scan),
+        "pending": len(active) if matches_scan else 0,
+        "identified": identified if matches_scan else 0,
+        "failed": failures if matches_scan else 0,
+        "queued": state.get("queued", 0) if matches_scan else 0,
+        "message": message if matches_scan else "",
+    }
 
 
 def load_results():
+    purge_weak_product_identifications_once(_current_scan_id or "")
     if not _current_scan_id:
         return []
     with closing(sqlite3.connect(DB_PATH)) as connection:
@@ -4864,6 +5771,12 @@ def load_results():
         identification_rows = connection.execute(
             """SELECT product_key, previous_key, method, confidence, alternatives_json
                FROM product_identifications WHERE scan_id = ?""",
+            (_current_scan_id,),
+        ).fetchall()
+        research_rows = connection.execute(
+            """SELECT product_key, trend_direction, active_ads, oldest_ad_days,
+                      social_views, social_interactions, notes
+               FROM research_evidence WHERE scan_id = ?""",
             (_current_scan_id,),
         ).fetchall()
     if scan is None:
@@ -4954,6 +5867,7 @@ def load_results():
     meta_lookups_by_key = {
         row["product_key"]: dict(row) for row in meta_lookup_rows
     }
+    research_by_key = {row["product_key"]: dict(row) for row in research_rows}
     identifications_by_key = {
         row["product_key"]: dict(row) for row in identification_rows
     }
@@ -5007,9 +5921,14 @@ def load_results():
         price_unit = comparison_offer["price_unit"] if comparison_offer else None
         evidence = {}
         product_ads = meta_ads_by_key.get(normalized, [])
+        # Category contamination ends here: only ads whose own text names this
+        # product are counted as its ads. The rest become similar-product ads.
+        profile = product_match_profile(group["product"], attributes=group["attributes"])
+        exact_ads, similar_ads = classify_product_ads(profile, product_ads)
         meta_lookup = meta_lookups_by_key.get(normalized)
         if meta_lookup and meta_lookup["status"] == "ok":
-            evidence["active_ads"] = len(product_ads)
+            evidence["active_ads"] = len(exact_ads)
+            evidence["category_ads"] = len(similar_ads)
             start_dates = []
             for ad in product_ads:
                 try:
@@ -5029,6 +5948,29 @@ def load_results():
             min(100, score), evidence
         )
         identification = identifications_by_key.get(normalized)
+        research_row = research_by_key.get(normalized) or {}
+        pricing = product_pricing_estimate(
+            min(comparable_prices) if comparable_prices else None,
+            currency,
+            price_unit,
+            listings_by_key.get(normalized, []),
+            offers=offers,
+        )
+        trend = product_trend_estimate(
+            research_row,
+            age_days,
+            period_days,
+            evidence.get("oldest_ad_days"),
+            exact_ads,
+        )
+        status, status_note = product_status_for(
+            _current_scan_id, normalized, group["candidate_only"], identification
+        )
+        gallery = product_gallery(
+            offers,
+            exact_ads + similar_ads,
+            listings_by_key.get(normalized, []),
+        )
         products.append(
             {
                 "key": normalized,
@@ -5049,8 +5991,27 @@ def load_results():
                 "offers": offers,
                 "market_research": evidence,
                 "competitor_listings": listings_by_key.get(normalized, []),
-                "active_meta_ads": product_ads,
+                "active_meta_ads": exact_ads,
+                "exact_meta_ads": exact_ads,
+                "similar_meta_ads": similar_ads,
                 "meta_ads_lookup": meta_lookup,
+                "ads_match_summary": {
+                    "exact": len(exact_ads),
+                    "similar": len(similar_ads),
+                    "filtered_out": max(
+                        0, len(product_ads) - len(exact_ads) - len(similar_ads)
+                    ),
+                },
+                "gallery": gallery,
+                "gallery_count": len(gallery),
+                "status": status,
+                "status_label": PRODUCT_STATUS_LABELS.get(status, status),
+                "status_note": status_note,
+                "identification_source": identification_source(
+                    identification, group["candidate_only"]
+                ),
+                "pricing": pricing,
+                "trend": trend,
                 "attributes": group["attributes"],
                 "candidate_only": group["candidate_only"],
                 "identified_from_photo": bool(
@@ -5196,9 +6157,15 @@ class Handler(BaseHTTPRequestHandler):
                         {
                             **photo_identification_summary(scan_id),
                             "web_research": web_research_summary(scan_id),
+                            "progressive": progressive_identification_summary(scan_id),
                         }
                         if scan_id
                         else None
+                    ),
+                    "status_counts": count_products_by_status(products),
+                    "integrity": scan_integrity(scan_id, products) if scan_id else None,
+                    "integrity_verification": (
+                        last_integrity_report(scan_id) if scan_id else None
                     ),
                 }
             )

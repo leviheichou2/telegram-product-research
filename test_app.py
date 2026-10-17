@@ -2,6 +2,7 @@ import sqlite3
 import re
 import asyncio
 import tempfile
+import time
 import unittest
 import os
 import json
@@ -1812,6 +1813,384 @@ class WebResearchTests(unittest.TestCase):
         # because it is keyed on the original normalized message product.
         self.assertFalse(app.load_results()[0]["candidate_only"])
         self.assertEqual(app.pending_web_research("test-scan"), ["hair clipper"])
+
+
+class ExactProductAdTests(unittest.TestCase):
+    """Only ads that name the product itself may reach the exact ads section."""
+
+    @staticmethod
+    def _ad(ad_id="ad", **overrides):
+        row = {
+            "ad_id": ad_id,
+            "page_name": "",
+            "creative_title": "",
+            "creative_text": "",
+            "link_url": "",
+            "link_caption": "",
+            "snapshot_url": "",
+        }
+        row.update(overrides)
+        return row
+
+    def test_an_ad_that_names_the_product_is_an_exact_match(self):
+        profile = app.product_match_profile("Item1001")
+
+        match = app.score_meta_ad(profile, self._ad(creative_title="Item1001 official"))
+
+        self.assertEqual(match["level"], "exact")
+
+    def test_another_model_of_the_same_line_is_not_an_exact_match(self):
+        profile = app.product_match_profile("Item1001")
+
+        match = app.score_meta_ad(profile, self._ad(creative_title="Item1002 wholesale lot"))
+
+        self.assertEqual(match["level"], "similar")
+        self.assertTrue(
+            any("different model" in reason.casefold() for reason in match["reasons"])
+        )
+
+    def test_a_variant_of_the_product_is_not_an_exact_match(self):
+        profile = app.product_match_profile("Item1001")
+
+        match = app.score_meta_ad(profile, self._ad(creative_title="Item1001 Plus"))
+
+        self.assertEqual(match["level"], "similar")
+        self.assertTrue(
+            any("variant" in reason.casefold() for reason in match["reasons"])
+        )
+
+    def test_a_known_brand_must_appear_in_the_ad_for_an_exact_match(self):
+        profile = app.product_match_profile("Item1001", attributes={"brand": ["Acme"]})
+
+        unbadged = app.score_meta_ad(profile, self._ad(creative_title="Item1001"))
+        badged = app.score_meta_ad(
+            profile, self._ad(creative_title="Item1001", page_name="Acme Store")
+        )
+
+        self.assertEqual(unbadged["level"], "similar")
+        self.assertEqual(badged["level"], "exact")
+
+    def test_the_exact_section_never_contains_a_same_category_ad(self):
+        profile = app.product_match_profile("Item1001")
+
+        exact, similar = app.classify_product_ads(
+            profile,
+            [
+                self._ad("exact-ad", creative_title="Item1001 genuine"),
+                self._ad("competitor", creative_title="Item1002 best price"),
+                self._ad("category", creative_title="Summer sale on sofas"),
+            ],
+        )
+
+        self.assertEqual([ad["ad_id"] for ad in exact], ["exact-ad"])
+        self.assertEqual(
+            sorted(ad["ad_id"] for ad in similar), ["category", "competitor"]
+        )
+        self.assertTrue(
+            all(ad["match"]["reasons"] for ad in exact + similar),
+            "every ad must explain why it is in its section",
+        )
+
+    def test_a_repeated_ad_row_is_only_counted_once(self):
+        profile = app.product_match_profile("Item1001")
+
+        exact, similar = app.classify_product_ads(
+            profile,
+            [
+                self._ad("same", creative_title="Item1001"),
+                self._ad("same", creative_title="Item1001"),
+                self._ad("other", creative_title="Item1002"),
+            ],
+        )
+
+        self.assertEqual([ad["ad_id"] for ad in exact], ["same"])
+        self.assertEqual([ad["ad_id"] for ad in similar], ["other"])
+
+
+class ProductIntelligenceTests(unittest.TestCase):
+    """The product page numbers must be traceable to a source, never invented."""
+
+    def test_the_margin_uses_the_lowest_supplier_price_and_a_read_competitor_price(self):
+        estimate = app.product_pricing_estimate(
+            1200,
+            "DZD",
+            "piece",
+            [
+                {"price": 2000, "currency": "DZD", "status": "ok"},
+                {"price": 2400, "currency": "DZD", "status": "ok"},
+                {"price": 9999, "currency": "USD", "status": "ok"},
+                {"price": None, "currency": "DZD", "status": "failed"},
+            ],
+        )
+
+        self.assertEqual(estimate["estimated_cost"], 1200)
+        self.assertEqual(estimate["estimated_selling_price"], 2200)
+        self.assertEqual(estimate["profit_margin_percent"], 45.5)
+        self.assertIn("median", estimate["basis"])
+
+    def test_a_missing_competitor_price_reports_no_margin_instead_of_a_guess(self):
+        estimate = app.product_pricing_estimate(1200, "DZD", "piece", [])
+
+        self.assertIsNone(estimate["estimated_selling_price"])
+        self.assertIsNone(estimate["profit_margin_percent"])
+        self.assertIn("needs a comparable competitor price", estimate["basis"])
+
+    def test_the_cheapest_priced_offer_is_the_cost_when_no_currency_was_detected(self):
+        estimate = app.product_pricing_estimate(
+            None,
+            None,
+            None,
+            [],
+            offers=[
+                {"price": 1500, "currency": None, "price_unit": None},
+                {"price": 900, "currency": None, "price_unit": None},
+            ],
+        )
+
+        self.assertEqual(estimate["estimated_cost"], 900)
+        self.assertIn("currency not detected", estimate["basis"])
+
+    def test_the_trend_prefers_the_recorded_research_direction(self):
+        trend = app.product_trend_estimate(
+            {"trend_direction": "rising"}, age_days=30, period_days=30,
+            oldest_ad_days=40, exact_ads=[{"ad_id": "1"}],
+        )
+
+        self.assertEqual(trend["trend_direction"], "rising")
+        self.assertGreaterEqual(trend["trend_score"], 78)
+        self.assertIn("Research trend: rising", trend["basis"])
+
+    def test_the_gallery_lists_supplier_photos_first_and_never_repeats_one(self):
+        gallery = app.product_gallery(
+            [
+                {"image": "/media/a.jpg", "supplier": "Supplier One"},
+                {"image": "/media/a.jpg", "supplier": "Supplier One"},
+            ],
+            [
+                {"page_name": "Ad Store", "image_url": "https://cdn.example.com/ad.jpg"},
+            ],
+            [{"title": "Competitor page", "image_url": "https://cdn.example.com/page.jpg"}],
+        )
+
+        self.assertEqual(
+            [item["url"] for item in gallery],
+            ["/media/a.jpg", "https://cdn.example.com/ad.jpg", "https://cdn.example.com/page.jpg"],
+        )
+        self.assertEqual(gallery[0]["source"], "supplier")
+
+    def test_every_product_state_is_explicit(self):
+        original = dict(app._identify_state)
+        original_active = set(app._identify_state["active"])
+        original_failed = dict(app._identify_state["failed"])
+
+        def restore():
+            app._identify_state.update(original)
+            app._identify_state["active"] = original_active
+            app._identify_state["failed"] = original_failed
+
+        self.addCleanup(restore)
+        with app._identify_lock:
+            app._identify_state["scan_id"] = "scan-1"
+            app._identify_state["active"] = {"review offer 1"}
+            app._identify_state["failed"] = {"review offer 2": "the photo was unreadable"}
+
+        named, _ = app.product_status_for("scan-1", "steel bottle", False, None)
+        processing, _ = app.product_status_for("scan-1", "review offer 1", True, None)
+        failed, reason = app.product_status_for("scan-1", "review offer 2", True, None)
+        waiting, note = app.product_status_for("scan-1", "review offer 3", True, None)
+
+        self.assertEqual(named, app.PRODUCT_STATUS_IDENTIFIED)
+        self.assertEqual(processing, app.PRODUCT_STATUS_PROCESSING)
+        self.assertEqual(failed, app.PRODUCT_STATUS_FAILED)
+        self.assertEqual(reason, "the photo was unreadable")
+        self.assertEqual(waiting, app.PRODUCT_STATUS_AWAITING_REVIEW)
+        self.assertTrue(note)
+
+    def test_the_status_counts_describe_every_row(self):
+        counts = app.count_products_by_status(
+            [
+                {"status": app.PRODUCT_STATUS_IDENTIFIED},
+                {"status": app.PRODUCT_STATUS_AWAITING_REVIEW},
+                {"status": app.PRODUCT_STATUS_AWAITING_REVIEW},
+                {"status": app.PRODUCT_STATUS_PROCESSING},
+                {"status": app.PRODUCT_STATUS_FAILED},
+            ]
+        )
+
+        self.assertEqual(counts["total"], 5)
+        self.assertEqual(counts[app.PRODUCT_STATUS_IDENTIFIED], 1)
+        self.assertEqual(counts[app.PRODUCT_STATUS_AWAITING_REVIEW], 2)
+        self.assertEqual(counts[app.PRODUCT_STATUS_PROCESSING], 1)
+        self.assertEqual(counts[app.PRODUCT_STATUS_FAILED], 1)
+
+
+class ScanIntegrityTests(unittest.TestCase):
+    """The scan record and the table rows must be checked against each other."""
+
+    def setUp(self):
+        self.temp_dir = tempfile.TemporaryDirectory()
+        self.original_db = app.DB_PATH
+        self.original_scan_id = app._current_scan_id
+        app.DB_PATH = Path(self.temp_dir.name) / "research.sqlite3"
+        app._current_scan_id = "integrity-scan"
+        app.initialize_database()
+        with closing(sqlite3.connect(app.DB_PATH)) as connection:
+            connection.execute(
+                """
+                INSERT INTO scans (
+                    scan_id, start_date, end_date, market, completed_at, status,
+                    scanned_messages, products_found, extractor_version
+                ) VALUES ('integrity-scan', '2026-10-01', '2026-10-03', 'Algeria',
+                          '2026-10-03T12:00:00+00:00', 'completed', 25, 1, 3)
+                """
+            )
+            connection.execute(
+                """
+                INSERT INTO messages (
+                    scan_id, chat_id, message_id, product, normalized_product,
+                    supplier, chat_title, message_date, message_text, review_candidate
+                ) VALUES (
+                    'integrity-scan', -1001234567890, 42, 'Steel Bottle', 'steel bottle',
+                    'Supplier One', 'Wholesale Chat', '2026-10-02T12:00:00+00:00',
+                    'Steel Bottle 1200 DZD', 0
+                )
+                """
+            )
+            connection.commit()
+
+    def tearDown(self):
+        app.DB_PATH = self.original_db
+        app._current_scan_id = self.original_scan_id
+        self.temp_dir.cleanup()
+
+    def test_the_scan_record_is_compared_with_the_rows_that_are_shown(self):
+        products = app.load_results()
+
+        integrity = app.scan_integrity("integrity-scan", products, deep=True)
+
+        self.assertEqual(integrity["returned"], 1)
+        self.assertEqual(integrity["detected"], 1)
+        self.assertEqual(integrity["recorded_in_scan"], 1)
+        self.assertTrue(integrity["consistent"])
+
+    def test_a_product_that_never_reached_the_table_is_reported(self):
+        integrity = app.scan_integrity("integrity-scan", [], deep=True)
+
+        self.assertFalse(integrity["consistent"])
+        self.assertTrue(any("1 product" in issue for issue in integrity["issues"]))
+
+    def test_an_older_scan_record_is_reported_but_not_called_a_mismatch(self):
+        products = app.load_results()
+        with closing(sqlite3.connect(app.DB_PATH)) as connection:
+            # Older scans stored the number of flagged posts in this column.
+            connection.execute(
+                "UPDATE scans SET products_found = 4 WHERE scan_id = 'integrity-scan'"
+            )
+            connection.commit()
+
+        integrity = app.scan_integrity("integrity-scan", products)
+
+        self.assertTrue(integrity["consistent"])
+        self.assertFalse(integrity["checked_from_messages"])
+        self.assertEqual(integrity["recorded_in_scan"], 4)
+
+    def test_the_finished_scan_verdict_is_stored_for_the_dashboard(self):
+        app.verify_scan_integrity("integrity-scan")
+
+        stored = app.last_integrity_report("integrity-scan")
+
+        self.assertIsNotNone(stored)
+        self.assertTrue(stored["checked_from_messages"])
+        self.assertTrue(stored["consistent"])
+
+    def test_a_running_scan_is_not_reported_as_a_mismatch(self):
+        products = app.load_results()
+        with closing(sqlite3.connect(app.DB_PATH)) as connection:
+            connection.execute(
+                "UPDATE scans SET status = 'running', products_found = 0 WHERE scan_id = 'integrity-scan'"
+            )
+            connection.commit()
+
+        integrity = app.scan_integrity("integrity-scan", products)
+
+        self.assertTrue(integrity["live"])
+        self.assertTrue(integrity["consistent"])
+
+    def test_the_deep_check_counts_the_products_straight_from_the_messages(self):
+        integrity = app.scan_integrity("integrity-scan", app.load_results(), deep=True)
+
+        self.assertEqual(integrity["detected"], 1)
+        self.assertTrue(integrity["checked_from_messages"])
+
+
+class ProgressiveIdentificationTests(unittest.TestCase):
+    """Identification must run while the scan is still going, not only after it."""
+
+    def setUp(self):
+        self.original_state = dict(app._identify_state)
+        self.original_active = set(app._identify_state["active"])
+        self.original_failed = dict(app._identify_state["failed"])
+        app._identify_state.update(
+            running=False, scan_id=None, active=set(), done=set(), failed={},
+            identified=0, queued=0, message="",
+        )
+
+    def tearDown(self):
+        app._identify_state.update(self.original_state)
+        app._identify_state["active"] = self.original_active
+        app._identify_state["failed"] = self.original_failed
+
+    def test_queued_products_are_identified_while_the_scan_runs(self):
+        saved = {
+            "saved": True,
+            "key": "item1001",
+            "name": "Item1001",
+            "score": 0.9,
+            "source": "web",
+        }
+        with patch.object(
+            app, "identify_product_progressive", return_value=saved
+        ) as identify, patch.object(app, "load_results", return_value=[]), patch.object(
+            app, "start_meta_ads_sync"
+        ):
+            self.assertTrue(app.start_progressive_identification("scan-live", workers=1))
+            self.assertEqual(app.enqueue_identification("scan-live", ["review offer 1"]), 1)
+            for _ in range(2000):
+                summary = app.progressive_identification_summary("scan-live")
+                if summary["pending"] == 0 and summary["identified"] == 1:
+                    break
+                time.sleep(0.01)
+            finished = app.finish_progressive_identification("scan-live", timeout=5)
+
+        self.assertEqual(summary["identified"], 1)
+        self.assertEqual(summary["pending"], 0)
+        self.assertTrue(finished["drained"])
+        identify.assert_called_once_with("scan-live", "review offer 1")
+
+    def test_a_product_no_reader_can_name_is_reported_as_failed_with_a_reason(self):
+        with patch.object(
+            app,
+            "identify_product_progressive",
+            return_value={"saved": False, "error": "the photo was unreadable"},
+        ), patch.object(app, "load_results", return_value=[]):
+            app.start_progressive_identification("scan-live", workers=1)
+            app.enqueue_identification("scan-live", ["review offer 9"])
+            for _ in range(2000):
+                summary = app.progressive_identification_summary("scan-live")
+                if summary["pending"] == 0 and summary["failed"] == 1:
+                    break
+                time.sleep(0.01)
+            status, reason = app.product_status_for("scan-live", "review offer 9", True, None)
+            app.finish_progressive_identification("scan-live", timeout=5)
+
+        self.assertEqual(summary["failed"], 1)
+        self.assertEqual(status, app.PRODUCT_STATUS_FAILED)
+        self.assertEqual(reason, "the photo was unreadable")
+
+    def test_identification_is_not_queued_for_another_scan(self):
+        app._identify_state["scan_id"] = "scan-live"
+
+        self.assertEqual(app.enqueue_identification("another-scan", ["review offer 1"]), 0)
 
 
 if __name__ == "__main__":

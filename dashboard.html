@@ -1048,6 +1048,142 @@
     box-shadow: none;
   }
   .btn-specs:hover:not(:disabled) { background: #f5f8fc; border-color: #bccadb; box-shadow: none; }
+  /* ==========================================================================
+     PRODUCT HERO (image gallery + product intelligence dashboard)
+     ========================================================================== */
+  .product-hero {
+    display: grid; grid-template-columns: minmax(280px, 420px) minmax(0, 1fr);
+    gap: 18px; align-items: start; margin: 14px 0 18px;
+  }
+  @media (max-width: 900px) { .product-hero { grid-template-columns: 1fr; } }
+  .hero-media { display: grid; gap: 8px; }
+  .hero-stage {
+    position: relative; display: grid; place-items: center;
+    min-height: 320px; padding: 10px;
+    background: #f4f7fb; border: 1px solid var(--border); border-radius: var(--r-lg);
+    overflow: hidden;
+  }
+  .hero-image {
+    max-width: 100%; max-height: 460px; object-fit: contain; cursor: zoom-in;
+    border-radius: var(--r-sm); background: #fff;
+  }
+  .hero-placeholder { color: var(--muted); font-size: 13px; padding: 40px 10px; text-align: center; }
+  .hero-nav {
+    position: absolute; top: 50%; transform: translateY(-50%);
+    width: 34px; height: 34px; border-radius: 999px; border: 1px solid var(--border-2);
+    background: rgba(255,255,255,.94); color: var(--ink-soft);
+    font-size: 20px; font-weight: 800; line-height: 1; cursor: pointer; box-shadow: none;
+  }
+  .hero-nav:hover { background: #fff; box-shadow: none; }
+  .hero-nav#hero-prev { left: 10px; }
+  .hero-nav#hero-next { right: 10px; }
+  .hero-counter {
+    position: absolute; bottom: 10px; left: 12px;
+    font-size: 11.5px; font-weight: 700; color: var(--ink-soft);
+    background: rgba(255,255,255,.94); border: 1px solid var(--border);
+    padding: 2px 9px; border-radius: 999px;
+  }
+  .hero-thumbs { display: flex; gap: 6px; overflow-x: auto; padding-bottom: 2px; }
+  .hero-thumb {
+    flex: 0 0 auto; width: 62px; height: 62px; padding: 0; overflow: hidden;
+    border: 2px solid transparent; border-radius: var(--r-sm); background: #fff; cursor: pointer; box-shadow: none;
+  }
+  .hero-thumb img { width: 100%; height: 100%; object-fit: cover; display: block; }
+  .hero-thumb.active { border-color: var(--teal); }
+  .hero-hint { font-size: 11.5px; color: var(--muted); margin: 0; }
+
+  .hero-intel { display: grid; gap: 10px; align-content: start; }
+  .hero-title-row { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+  .hero-title-row h3 { margin: 0; font-size: 22px; color: var(--ink); }
+  .intel-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 8px; }
+  .intel-cell {
+    border: 1px solid var(--border); border-radius: var(--r-sm);
+    background: #f8fafc; padding: 8px 10px; display: grid; gap: 2px;
+  }
+  .intel-cell span { font-size: 10.5px; font-weight: 800; letter-spacing: .05em; text-transform: uppercase; color: var(--muted); }
+  .intel-cell b { font-size: 15px; color: var(--ink); }
+  .intel-foot { font-size: 11.5px; color: var(--muted); margin: 0; line-height: 1.5; }
+  .hero-actions { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; }
+  .hero-actions input { flex: 1 1 180px; min-width: 140px; }
+
+  .status-pill {
+    display: inline-flex; align-items: center; gap: 5px;
+    font-size: 11px; font-weight: 800; padding: 3px 10px; border-radius: 999px;
+    border: 1px solid transparent;
+  }
+  .status-pill.identified { color: var(--ok); background: #e2f6ea; border-color: #bfe7d1; }
+  .status-pill.awaiting_review { color: #8a6100; background: #fff5da; border-color: #f2dfae; }
+  .status-pill.processing { color: #1d5c93; background: #e4f0fb; border-color: #c4ddf3; }
+  .status-pill.failed { color: #a02724; background: #fdeaea; border-color: #f5cdcd; }
+
+  /* ==========================================================================
+     HORIZONTAL AD CAROUSELS (exact product ads / similar product ads)
+     ========================================================================== */
+  .carousel-section { margin: 16px 0; }
+  .carousel-head { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; }
+  .carousel-head h4 { margin: 0; font-size: 14px; color: #243247; }
+  .carousel-count { font-size: 11.5px; font-weight: 700; color: var(--muted); }
+  .carousel-note { font-size: 11.5px; color: var(--muted); margin: 4px 0 8px; line-height: 1.5; }
+  .carousel-empty { font-size: 12px; color: var(--muted); margin: 0; padding: 10px 2px; }
+  .hcarousel { display: flex; align-items: stretch; gap: 8px; }
+  .hcarousel-track {
+    display: flex; gap: 10px; overflow-x: auto; scroll-behavior: smooth;
+    scroll-snap-type: x proximity; padding: 2px 2px 8px; flex: 1 1 auto;
+  }
+  .hcarousel-nav {
+    flex: 0 0 auto; width: 34px; align-self: center;
+    border: 1px solid var(--border-2); border-radius: 999px; background: #fff;
+    color: var(--ink-soft); font-size: 18px; font-weight: 800; line-height: 1; cursor: pointer; box-shadow: none;
+  }
+  .hcarousel-nav:hover { background: #f2f6fb; box-shadow: none; }
+  .hcard {
+    flex: 0 0 320px; scroll-snap-align: start; display: grid; grid-template-rows: auto 1fr;
+    border: 1px solid var(--border); border-radius: var(--r-lg); background: #fff; overflow: hidden;
+  }
+  .hcard.exact { border-color: #cbe6dd; }
+  .hcard.similar { border-color: var(--border); }
+  .hcard-media { background: #f4f7fb; min-height: 150px; display: grid; place-items: center; }
+  .hcard-media img, .hcard-media video {
+    width: 100%; height: 168px; object-fit: cover; display: block; cursor: zoom-in;
+  }
+  .hcard-placeholder { font-size: 11.5px; color: var(--muted); padding: 40px 10px; }
+  .hcard-body { padding: 10px 12px 12px; display: grid; gap: 6px; align-content: start; }
+  .hcard-head { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+  .hcard-page { font-size: 13px; font-weight: 750; color: var(--ink); }
+  .hcard-title { font-size: 12.5px; font-weight: 700; color: var(--ink-soft); margin: 0; }
+  .hcard-text { font-size: 12px; color: var(--muted); margin: 0; line-height: 1.45; }
+  .hcard-reason-head { font-size: 10.5px; font-weight: 800; letter-spacing: .05em; text-transform: uppercase; color: var(--muted); margin: 2px 0 0; }
+  .hcard-reasons { margin: 0; padding-left: 16px; font-size: 11.5px; color: var(--ink-soft); line-height: 1.5; }
+  .hcard-actions { display: flex; gap: 6px; flex-wrap: wrap; }
+
+  /* ==========================================================================
+     FULL-SIZE IMAGE VIEWER (click any product image)
+     ========================================================================== */
+  .image-modal {
+    position: fixed; inset: 0; z-index: 320;
+    display: grid; grid-template-rows: auto 1fr;
+    background: rgba(9, 14, 24, .92);
+  }
+  .image-modal.hidden { display: none !important; }
+  .image-modal-bar {
+    display: flex; align-items: center; justify-content: space-between; gap: 12px;
+    padding: 10px 16px; color: #e8eef7; font-size: 12.5px;
+    background: rgba(15, 23, 42, .8); border-bottom: 1px solid rgba(255,255,255,.12);
+  }
+  .image-modal-bar button {
+    border: 1px solid rgba(255,255,255,.28); background: rgba(255,255,255,.08);
+    color: #e8eef7; border-radius: var(--r-sm); font-size: 12px; font-weight: 700;
+    padding: 5px 10px; cursor: pointer; box-shadow: none; margin-left: 6px;
+  }
+  .image-modal-bar button:hover { background: rgba(255,255,255,.18); box-shadow: none; }
+  .image-modal-stage {
+    overflow: auto; display: grid; place-items: center; padding: 18px;
+  }
+  .image-modal-stage img {
+    max-width: 100%; max-height: calc(100vh - 90px);
+    transform-origin: center center; transition: transform .12s ease;
+    background: #fff; border-radius: 4px;
+  }
 </style>
 </head>
 
@@ -1437,13 +1573,72 @@
           </div>
         </div>
 
+        <!-- ===== ABOVE THE FOLD: image gallery + product intelligence ===== -->
+        <section class="product-hero">
+          <div class="hero-media">
+            <div class="hero-stage" id="hero-stage">
+              <button class="hero-nav" id="hero-prev" type="button" aria-label="Previous image">&lsaquo;</button>
+              <img id="hero-image" class="hero-image" alt="Product image" hidden>
+              <div class="hero-placeholder" id="hero-placeholder">No product image yet. Images arrive from the supplier posts, the ad creatives and the competitor pages.</div>
+              <button class="hero-nav" id="hero-next" type="button" aria-label="Next image">&rsaquo;</button>
+              <span class="hero-counter" id="hero-counter"></span>
+            </div>
+            <div class="hero-thumbs" id="hero-thumbs"></div>
+            <p class="hero-hint">Click the image for the full-size viewer with zoom. Use the arrows, the thumbnails, or the left/right keys to move through the gallery.</p>
+          </div>
+
+          <div class="hero-intel">
+            <p class="eyebrow">PRODUCT INTELLIGENCE</p>
+            <div class="hero-title-row">
+              <h3 id="pm-name">No product selected</h3>
+              <span class="status-pill identified" id="pm-status">&mdash;</span>
+            </div>
+            <div class="intel-grid">
+              <div class="intel-cell"><span>Confidence</span><b id="pm-confidence">&mdash;</b></div>
+              <div class="intel-cell"><span>Supplier count</span><b id="pm-sellers">&mdash;</b></div>
+              <div class="intel-cell"><span>Estimated selling price</span><b id="pm-sell">&mdash;</b></div>
+              <div class="intel-cell"><span>Estimated cost</span><b id="pm-cost">&mdash;</b></div>
+              <div class="intel-cell"><span>Profit margin</span><b id="pm-margin">&mdash;</b></div>
+              <div class="intel-cell"><span>Trend score</span><b id="pm-trend">&mdash;</b></div>
+              <div class="intel-cell"><span>Exact product ads</span><b id="pm-ads">&mdash;</b></div>
+              <div class="intel-cell"><span>Similar product ads</span><b id="pm-similar">&mdash;</b></div>
+            </div>
+            <p class="intel-foot" id="intel-foot"></p>
+            <div class="hero-actions">
+              <input id="profile-name-input" type="text" placeholder="Product name">
+              <button id="profile-save-name" type="button" class="mp-btn primary">Save name</button>
+              <button id="profile-ident-image" type="button" class="mp-btn">Identify from image</button>
+              <button id="profile-research-web" type="button" class="mp-btn">Research on the web</button>
+            </div>
+          </div>
+        </section>
+
+        <!-- ===== SECTION 1: exact product ads only ===== -->
+        <section class="carousel-section" id="exact-ads-section">
+          <div class="carousel-head">
+            <h4>Exact product ads</h4>
+            <span class="carousel-count" id="exact-ads-count">0 ads</span>
+          </div>
+          <p class="carousel-note">Only ads whose own text names this exact product &mdash; its model, brand and variant. Competitors and same-category neighbours are excluded from this section on purpose.</p>
+          <div class="hcarousel" id="exact-ads-carousel"></div>
+        </section>
+
+        <!-- ===== SECTION 2: similar product ads, never mixed with section 1 ===== -->
+        <section class="carousel-section" id="similar-ads-section">
+          <div class="carousel-head">
+            <h4>Similar product ads</h4>
+            <span class="carousel-count" id="similar-ads-count">0 ads</span>
+          </div>
+          <p class="carousel-note">Related products, competitors and alternatives, each labelled with the reason it is considered similar. These are never mixed into the exact section above.</p>
+          <div class="hcarousel" id="similar-ads-carousel"></div>
+        </section>
+
         <div class="profile-metrics">
           <div class="profile-metric"><span class="pm-label">Test priority</span><span class="pm-value" id="pm-score">&ndash;</span><span class="pm-foot" id="pm-score-foot"></span></div>
           <div class="profile-metric"><span class="pm-label">Telegram posts</span><span class="pm-value" id="pm-posts">&ndash;</span><span class="pm-foot" id="pm-posts-foot"></span></div>
-          <div class="profile-metric"><span class="pm-label">Suppliers</span><span class="pm-value" id="pm-sellers">&ndash;</span><span class="pm-foot" id="pm-sellers-foot"></span></div>
           <div class="profile-metric"><span class="pm-label">Max views</span><span class="pm-value" id="pm-views">&ndash;</span><span class="pm-foot" id="pm-views-foot"></span></div>
           <div class="profile-metric"><span class="pm-label">Lowest listed price</span><span class="pm-value" id="pm-price">&ndash;</span><span class="pm-foot" id="pm-price-foot"></span></div>
-          <div class="profile-metric"><span class="pm-label">Active Meta ads</span><span class="pm-value" id="pm-ads">&ndash;</span><span class="pm-foot" id="pm-ads-foot"></span></div>
+          <div class="profile-metric"><span class="pm-label">Ad lookups</span><span class="pm-value" id="pm-ads-foot">&ndash;</span><span class="pm-foot" id="pm-ads-foot-note"></span></div>
         </div>
 
         <div class="profile-columns">
@@ -1455,12 +1650,6 @@
           <section class="profile-block">
             <h4>Identification</h4>
             <div id="profile-ident" class="profile-body">Not identified yet.</div>
-            <div class="mp-row" style="margin-top:8px;">
-              <input id="profile-name-input" type="text" placeholder="Product name">
-              <button id="profile-save-name" type="button" class="mp-btn">Save name</button>
-              <button id="profile-ident-image" type="button" class="mp-btn">Identify from image</button>
-              <button id="profile-research-web" type="button" class="mp-btn">Research on the web</button>
-            </div>
           </section>
 
           <section class="profile-block">
@@ -1674,6 +1863,23 @@
     </div>
   </div>
 </div>
+<!-- ===================== FULL-SIZE IMAGE VIEWER ===================== -->
+<div class="image-modal hidden" id="image-modal" role="dialog" aria-modal="true" aria-label="Product image viewer">
+  <div class="image-modal-bar">
+    <span id="image-modal-caption"></span>
+    <div>
+      <button type="button" id="image-modal-zoom-out" aria-label="Zoom out">&minus;</button>
+      <button type="button" id="image-modal-zoom-in" aria-label="Zoom in">&#43;</button>
+      <button type="button" id="image-modal-reset">100%</button>
+      <button type="button" id="image-modal-fullscreen">Full screen</button>
+      <button type="button" id="image-modal-close" aria-label="Close image viewer">&times;</button>
+    </div>
+  </div>
+  <div class="image-modal-stage" id="image-modal-stage">
+    <img id="image-modal-img" alt="Product image full size">
+  </div>
+</div>
+
 <div class="toast-stack" id="toast-stack" aria-live="polite"></div>
 
   <script>
@@ -2174,6 +2380,10 @@
       try {
 
         const response = await responsePromise;
+        window.__lastIntegrity = response.integrity || null;
+        window.__lastVerification = response.integrity_verification || null;
+        window.__lastStatusCounts = response.status_counts || null;
+        window.__lastProgressive = (response.identification_summary || {}).progressive || null;
 
         renderResults(response.products, response.scan, response.legacy_results_unreliable);
 
@@ -2393,6 +2603,10 @@
       try {
 
         const response = await responsePromise;
+        window.__lastIntegrity = response.integrity || null;
+        window.__lastVerification = response.integrity_verification || null;
+        window.__lastStatusCounts = response.status_counts || null;
+        window.__lastProgressive = (response.identification_summary || {}).progressive || null;
 
         renderResults(response.products, response.scan, response.legacy_results_unreliable);
 
@@ -2805,11 +3019,36 @@
       if (scan) {
         scanSummary.textContent =
           `Last scan: ${scan.start_date} through ${scan.end_date} · ${scan.chat_count} chats · ` +
-          `${scan.scanned_messages} messages checked · ${scan.products_found} posts flagged for review · ` +
-          `${products.length} result row(s) · ${scan.status}.`;
+          `${scan.scanned_messages} messages checked · ${scan.products_found} product(s) detected · ` +
+          `${products.length} row(s) in this table · ${scan.status}.`;
         if (legacyResultsUnreliable) {
           scanSummary.textContent +=
             " This older scan used an unsuitable name extractor; its product names are hidden. Run a new scan for corrected results.";
+        }
+        const counts = window.__lastStatusCounts;
+        if (counts && counts.total) {
+          scanSummary.textContent +=
+            ` ${counts.total} product(s) shown: ${counts.identified} identified, ` +
+            `${counts.processing} identifying now, ${counts.awaiting_review} awaiting review, ` +
+            `${counts.failed} failed.`;
+        }
+        const integrity = window.__lastIntegrity;
+        const verification = window.__lastVerification;
+        if (integrity) {
+          scanSummary.textContent += integrity.checked_from_messages
+            ? " Scan-to-table check: every detected product is in the table."
+            : " Scan-to-table check: this scan has not been re-counted yet.";
+        }
+        if (verification && !verification.consistent) {
+          scanSummary.textContent += " ⚠ " + verification.issues.join(" ");
+        } else if (integrity && !integrity.consistent && integrity.checked_from_messages) {
+          scanSummary.textContent += " ⚠ " + integrity.issues.join(" ");
+        }
+        const progressive = window.__lastProgressive;
+        if (progressive && progressive.running) {
+          scanSummary.textContent +=
+            ` Live: ${progressive.identified} named during the scan, ` +
+            `${progressive.pending} still being read.`;
         }
       } else {
         scanSummary.textContent = "";
@@ -3153,17 +3392,21 @@
         const metaCell = document.createElement("td");
         const metaBox = document.createElement("div");
         metaBox.className = "meta-cell";
-        const ads = product.active_meta_ads || [];
-        if (ads.length) {
-          const pill = document.createElement("span");
-          pill.className = "pill ok";
-          pill.textContent = `${ads.length} ad${ads.length === 1 ? "" : "s"}`;
-          metaBox.append(pill);
-        } else {
-          const pill = document.createElement("span");
-          pill.className = "pill neutral";
-          pill.textContent = "—";
-          metaBox.append(pill);
+        const exactAds = product.exact_meta_ads || product.active_meta_ads || [];
+        const similarAds = product.similar_meta_ads || [];
+        const adsSummary = product.ads_match_summary || {};
+        const exactPill = document.createElement("span");
+        exactPill.className = exactAds.length ? "pill ok" : "pill neutral";
+        exactPill.textContent = exactAds.length ? `${exactAds.length} exact` : "no exact ad";
+        if (adsSummary.filtered_out) {
+          exactPill.title = `${adsSummary.filtered_out} repeated ad row(s) were counted once`;
+        }
+        metaBox.append(exactPill);
+        if (similarAds.length) {
+          const similarPill = document.createElement("span");
+          similarPill.className = "pill info";
+          similarPill.textContent = `${similarAds.length} similar`;
+          metaBox.append(similarPill);
         }
         metaCell.append(metaBox);
         row.append(metaCell);
@@ -3187,7 +3430,8 @@
         } else {
           const pill = document.createElement("span");
           pill.className = "pill neutral";
-          pill.textContent = "not identified";
+          pill.textContent = product.status_label ? product.status_label.toLowerCase() : "not identified";
+          if (product.status_note) pill.title = product.status_note;
           identBox.append(pill);
         }
         identCell.append(identBox);
@@ -3636,6 +3880,61 @@
     if (productSort) {
       productSort.addEventListener("change", applyFiltersAndSort);
     }
+
+    // ------------------------------------------------------------------
+    // Live results while a scan runs.
+    //
+    // The table used to be filled once, after the scan finished, so products
+    // that had already been found were invisible for the whole run. This polls
+    // the same results endpoint every few seconds while a scan is active and
+    // redraws the table, so rows appear as they are detected and their status
+    // updates as identification and the ad lookup land.
+    // ------------------------------------------------------------------
+    var resultsStreamTimer = null;
+    var resultsStreamBusy = false;
+
+    function scheduleResultsStream() {
+      if (resultsStreamTimer) return;
+      resultsStreamTimer = setTimeout(streamResults, 3000);
+    }
+
+    function stopResultsStream() {
+      if (resultsStreamTimer) {
+        clearTimeout(resultsStreamTimer);
+        resultsStreamTimer = null;
+      }
+    }
+
+    async function streamResults() {
+      resultsStreamTimer = null;
+      if (resultsStreamBusy) { scheduleResultsStream(); return; }
+      var page = document.getElementById("page-products");
+      var productPage = document.getElementById("page-product");
+      var visible = (page && !page.hidden) || (productPage && !productPage.hidden);
+      if (!visible || document.visibilityState !== "visible") { scheduleResultsStream(); return; }
+      resultsStreamBusy = true;
+      try {
+        var response = await fetch("/api/results").then(function (r) { return r.json(); });
+        if (response && response.products) {
+          window.__lastIntegrity = response.integrity || null;
+          window.__lastVerification = response.integrity_verification || null;
+          window.__lastStatusCounts = response.status_counts || null;
+          window.__lastProgressive = (response.identification_summary || {}).progressive || null;
+          renderResults(response.products, response.scan, response.legacy_results_unreliable);
+        }
+      } catch (error) {
+        // A failed refresh must never break the page; the next tick retries.
+      } finally {
+        resultsStreamBusy = false;
+      }
+      if (window.scanIsRunning) scheduleResultsStream();
+    }
+
+    // Watchdog: follows the scan state that pollStatus publishes.
+    setInterval(function () {
+      if (window.scanIsRunning) scheduleResultsStream();
+      else stopResultsStream();
+    }, 1000);
 
 
   </script>
@@ -4924,6 +5223,660 @@
 
     window.__logJSON = _logJSON;
 
+  // ============================ API helper ============================
+  // This block runs in its own scope, so it needs its own fetch wrapper: the
+  // product page used to call a `request` that only existed in another script
+  // block, which is why the profile silently never finished loading.
+  async function request(path, options) {
+    var opts = options || {};
+    var init = { method: opts.method || "GET" };
+    if (opts.body !== undefined && opts.body !== null) {
+      init.body = opts.body;
+      init.headers = opts.headers || { "Content-Type": "application/json" };
+    } else if (opts.headers) {
+      init.headers = opts.headers;
+    }
+    var controller = typeof AbortController === "function" ? new AbortController() : null;
+    var timer = null;
+    if (controller) {
+      init.signal = controller.signal;
+      timer = setTimeout(function () { controller.abort(); }, opts.timeout || 30000);
+    }
+    try {
+      var response = await fetch(path, init);
+      var text = await response.text();
+      var data = {};
+      if (text) {
+        try { data = JSON.parse(text); } catch (parseError) { data = { raw: text }; }
+      }
+      if (!response.ok) throw new Error(data.error || ("Request failed (" + response.status + ")"));
+      return data;
+    } finally {
+      if (timer) clearTimeout(timer);
+    }
+  }
+
+  // ================= product intelligence, gallery, ad carousels =================
+  var gallery = { items: [], index: 0 };
+  var imageModalScale = 1;
+
+  function setText(id, value) {
+    var node = el(id);
+    if (node) node.textContent = (value === null || value === undefined || value === "") ? "\u2014" : String(value);
+  }
+
+  function moneyText(value, currency, unit) {
+    if (value === null || value === undefined || value === "") return "\u2014";
+    var amount = (typeof value === "number") ? value.toLocaleString() : String(value);
+    return (currency ? currency + " " : "") + amount + (unit ? " / " + unit : "");
+  }
+
+  function renderHero(p) {
+    setText("profile-name", p.product || p.key || "Unnamed product");
+    setText("pm-name", p.product || p.key || "Unnamed product");
+    setText("profile-key", "Key: " + (p.key || "") + (p.candidate_only ? " \u00b7 name read from the offer post, not confirmed yet" : ""));
+    var pill = el("pm-status");
+    if (pill) {
+      var status = p.status || "awaiting_review";
+      pill.className = "status-pill " + status;
+      pill.textContent = p.status_label || status;
+      pill.title = p.status_note || "This product has a confirmed name.";
+    }
+    var confidence = p.identification_confidence;
+    setText(
+      "pm-confidence",
+      confidence == null
+        ? (p.candidate_only ? "not named yet" : "named by the scanner")
+        : Math.round(confidence * 100) + "% \u00b7 " + (p.identification_source || p.identification_method || "source")
+    );
+    setText("pm-sellers", p.sellers);
+
+    var pricing = p.pricing || {};
+    setText("pm-sell", moneyText(pricing.estimated_selling_price, pricing.currency, pricing.price_unit));
+    setText("pm-cost", moneyText(pricing.estimated_cost, pricing.currency, pricing.price_unit));
+    setText(
+      "pm-margin",
+      pricing.profit_margin_percent == null
+        ? "needs a competitor price"
+        : pricing.profit_margin_percent + "%" + (pricing.estimated_margin_value != null ? " (" + moneyText(pricing.estimated_margin_value, pricing.currency) + ")" : "")
+    );
+
+    var trend = p.trend || {};
+    setText("pm-trend", trend.trend_score == null ? "\u2014" : trend.trend_score + "/100");
+
+    var ads = p.ads_match_summary || {};
+    var exactCount = ads.exact != null ? ads.exact : (p.exact_meta_ads || p.active_meta_ads || []).length;
+    var similarCount = ads.similar != null ? ads.similar : (p.similar_meta_ads || []).length;
+    setText("pm-ads", exactCount);
+    setText("pm-similar", similarCount);
+
+    var foot = [];
+    if (pricing.basis) foot.push(pricing.basis);
+    if (trend.basis) foot.push("Trend: " + trend.basis);
+    if (ads.filtered_out) foot.push(ads.filtered_out + " repeated ad row(s) were counted once");
+    if (p.status_note && p.status !== "identified") foot.push((p.status_label || p.status) + ": " + p.status_note);
+    setText("intel-foot", foot.join(" \u00b7 "));
+
+    setText("pm-score", p.candidate_only ? "Review" : (p.score != null ? p.score + "/100" : null));
+    setText("pm-score-foot", p.research_coverage ? p.research_coverage + " research source type(s)" : "Telegram-only score");
+    setText("pm-posts", p.posts);
+    setText("pm-posts-foot", [
+      p.total_reactions != null ? p.total_reactions + " reactions" : "",
+      p.total_comments != null ? p.total_comments + " comments" : ""
+    ].filter(Boolean).join(" \u00b7 "));
+    setText("pm-views", p.max_views);
+    setText("pm-views-foot", p.total_forwards != null ? p.total_forwards + " forwards" : "");
+    setText("pm-price", moneyText(p.lowest_price, p.price_currency, p.price_unit));
+    setText("pm-ads-foot", p.meta_ads_lookup ? (p.meta_ads_lookup.status || "\u2014") : "not checked");
+    setText("pm-ads-foot-note", exactCount + " exact \u00b7 " + similarCount + " similar");
+
+    var input = el("profile-name-input");
+    if (input && !input.value) input.value = p.product || p.key || "";
+  }
+
+  function galleryItems(p) {
+    var items = (p.gallery || []).slice();
+    if (!items.length) {
+      (p.offers || []).forEach(function (offer) {
+        if (offer.image) items.push({ url: offer.image, source: "supplier", label: offer.supplier || "Supplier photo" });
+      });
+    }
+    return items;
+  }
+
+  function showGalleryIndex(index) {
+    var items = gallery.items;
+    var image = el("hero-image");
+    var placeholder = el("hero-placeholder");
+    var counter = el("hero-counter");
+    if (!items.length) {
+      if (image) image.hidden = true;
+      if (placeholder) placeholder.hidden = false;
+      if (counter) counter.textContent = "";
+      return;
+    }
+    if (index < 0) index = items.length - 1;
+    if (index >= items.length) index = 0;
+    gallery.index = index;
+    var item = items[index];
+    if (image) {
+      image.hidden = false;
+      image.src = item.url;
+      image.alt = (item.label || "Product image") + " (" + (item.source || "image") + ")";
+    }
+    if (placeholder) placeholder.hidden = true;
+    if (counter) counter.textContent = (index + 1) + " / " + items.length + (item.source ? " \u00b7 " + item.source : "");
+    var thumbs = el("hero-thumbs");
+    if (thumbs) {
+      Array.prototype.forEach.call(thumbs.children, function (node, i) {
+        node.classList.toggle("active", i === index);
+      });
+    }
+  }
+
+  function renderGallery(p) {
+    gallery.items = galleryItems(p);
+    gallery.index = 0;
+    var thumbs = el("hero-thumbs");
+    if (thumbs) {
+      thumbs.replaceChildren();
+      gallery.items.forEach(function (item, i) {
+        var button = document.createElement("button");
+        button.type = "button";
+        button.className = "hero-thumb";
+        button.title = (item.label || "Image") + " \u00b7 " + (item.source || "");
+        var thumb = document.createElement("img");
+        thumb.src = item.url;
+        thumb.alt = item.label || "Gallery thumbnail";
+        thumb.loading = "lazy";
+        button.append(thumb);
+        button.addEventListener("click", function () { showGalleryIndex(i); });
+        thumbs.append(button);
+      });
+      thumbs.hidden = gallery.items.length < 2;
+    }
+    showGalleryIndex(0);
+  }
+
+  function adCard(ad, level) {
+    var card = document.createElement("article");
+    card.className = "hcard " + level;
+
+    var media = document.createElement("div");
+    media.className = "hcard-media";
+    var imageUrl = ad.image_url || ad.thumbnail_url;
+    if (level === "exact" && ad.video_url) {
+      var video = document.createElement("video");
+      video.src = ad.video_url;
+      video.controls = true;
+      video.preload = "metadata";
+      media.append(video);
+    } else if (imageUrl) {
+      var img = document.createElement("img");
+      img.src = imageUrl;
+      img.alt = (ad.page_name || "Ad") + " creative";
+      img.loading = "lazy";
+      img.addEventListener("click", function () { openImageModal(imageUrl, (ad.page_name || "Ad") + " creative"); });
+      media.append(img);
+    } else {
+      var placeholder = document.createElement("div");
+      placeholder.className = "hcard-placeholder";
+      placeholder.textContent = "No creative image in this ad";
+      media.append(placeholder);
+    }
+
+    var body = document.createElement("div");
+    body.className = "hcard-body";
+
+    var head = document.createElement("div");
+    head.className = "hcard-head";
+    var page = document.createElement("span");
+    page.className = "hcard-page";
+    page.textContent = ad.page_name || "Unknown page";
+    head.append(page);
+    var statusPill = document.createElement("span");
+    statusPill.className = "ad-status-pill " + (ad.is_active ? "active" : "inactive");
+    statusPill.textContent = ad.is_active ? "Active" : "Inactive";
+    head.append(statusPill);
+    body.append(head);
+
+    if (ad.creative_title) {
+      var title = document.createElement("p");
+      title.className = "hcard-title";
+      title.textContent = short(ad.creative_title, 110);
+      body.append(title);
+    }
+    if (ad.creative_text) {
+      var text = document.createElement("p");
+      text.className = "hcard-text";
+      text.textContent = short(ad.creative_text, 170);
+      body.append(text);
+    }
+
+    var chips = document.createElement("div");
+    chips.className = "ad-meta-chips";
+    [
+      ["Platforms", (ad.platforms || []).join(", ")],
+      ["Started", (ad.delivery_start || "").slice(0, 10)],
+      ["CTA", ad.cta_text],
+      ["Spend", ad.spend],
+      ["Impressions", ad.impressions],
+      ["Ad ID", ad.ad_id]
+    ].filter(function (pair) { return pair[1]; }).forEach(function (pair) {
+      var chip = document.createElement("span");
+      chip.className = "ad-meta-chip";
+      chip.textContent = pair[0] + ": " + pair[1];
+      chips.append(chip);
+    });
+    if (chips.childElementCount) body.append(chips);
+
+    var match = ad.match || {};
+    if (match.reasons && match.reasons.length) {
+      var reasonHead = document.createElement("p");
+      reasonHead.className = "hcard-reason-head";
+      reasonHead.textContent = level === "exact"
+        ? "Why this is an exact match"
+        : "Why this is considered similar";
+      var reasons = document.createElement("ul");
+      reasons.className = "hcard-reasons";
+      match.reasons.forEach(function (reason) {
+        var li = document.createElement("li");
+        li.textContent = reason;
+        reasons.append(li);
+      });
+      body.append(reasonHead, reasons);
+    }
+
+    var actions = document.createElement("div");
+    actions.className = "hcard-actions";
+    if (ad.link_url) {
+      var link = document.createElement("a");
+      link.className = "ad-media-link";
+      link.href = ad.link_url;
+      link.target = "_blank";
+      link.rel = "noopener noreferrer";
+      link.textContent = "Open advertiser page";
+      actions.append(link);
+    }
+    if (ad.snapshot_url) {
+      var snapshot = document.createElement("a");
+      snapshot.className = "ad-media-link";
+      snapshot.href = ad.snapshot_url;
+      snapshot.target = "_blank";
+      snapshot.rel = "noopener noreferrer";
+      snapshot.textContent = "Ad details";
+      actions.append(snapshot);
+    }
+    if (actions.childElementCount) body.append(actions);
+
+    card.append(media, body);
+    return card;
+  }
+
+  function renderAdCarousel(containerId, countId, ads, level, emptyText) {
+    var box = el(containerId);
+    if (!box) return;
+    var count = el(countId);
+    if (count) count.textContent = ads.length + (ads.length === 1 ? " ad" : " ads");
+    box.replaceChildren();
+    if (!ads.length) {
+      var empty = document.createElement("p");
+      empty.className = "carousel-empty";
+      empty.textContent = emptyText;
+      box.append(empty);
+      return;
+    }
+    var prev = document.createElement("button");
+    prev.type = "button";
+    prev.className = "hcarousel-nav";
+    prev.setAttribute("aria-label", level === "exact" ? "Scroll exact ads left" : "Scroll similar ads left");
+    prev.textContent = "\u2039";
+    var track = document.createElement("div");
+    track.className = "hcarousel-track";
+    ads.forEach(function (ad) { track.append(adCard(ad, level)); });
+    var next = document.createElement("button");
+    next.type = "button";
+    next.className = "hcarousel-nav";
+    next.setAttribute("aria-label", level === "exact" ? "Scroll exact ads right" : "Scroll similar ads right");
+    next.textContent = "\u203a";
+    prev.addEventListener("click", function () { track.scrollBy({ left: -340, behavior: "smooth" }); });
+    next.addEventListener("click", function () { track.scrollBy({ left: 340, behavior: "smooth" }); });
+    box.append(prev, track, next);
+  }
+
+  function renderAds(p) {
+    var exact = p.exact_meta_ads || p.active_meta_ads || [];
+    var similar = p.similar_meta_ads || [];
+    var lookup = p.meta_ads_lookup;
+    var exactEmpty = (lookup && lookup.status === "failed")
+      ? ("The Ad Library lookup failed: " + (lookup.error_text || "unknown error"))
+      : "No active ad names this exact product yet. Ads appear here only when they name it themselves.";
+    renderAdCarousel("exact-ads-carousel", "exact-ads-count", exact, "exact", exactEmpty);
+    renderAdCarousel(
+      "similar-ads-carousel",
+      "similar-ads-count",
+      similar,
+      "similar",
+      "No related or competitor ads were returned for this product yet."
+    );
+  }
+
+  // ---- full-size image viewer ----
+  function applyModalScale() {
+    var img = el("image-modal-img");
+    if (img) img.style.transform = "scale(" + imageModalScale + ")";
+  }
+
+  function openImageModal(url, caption) {
+    if (!url) return;
+    var modal = el("image-modal");
+    var img = el("image-modal-img");
+    if (!modal || !img) return;
+    imageModalScale = 1;
+    applyModalScale();
+    img.src = url;
+    img.alt = caption || "Product image";
+    var captionNode = el("image-modal-caption");
+    if (captionNode) captionNode.textContent = caption || "";
+    modal.classList.remove("hidden");
+    document.body.classList.add("modal-open");
+  }
+
+  function closeImageModal() {
+    var modal = el("image-modal");
+    if (!modal || modal.classList.contains("hidden")) return;
+    modal.classList.add("hidden");
+    document.body.classList.remove("modal-open");
+  }
+
+  function zoomImageModal(multiplier) {
+    imageModalScale = Math.min(6, Math.max(1, imageModalScale * multiplier));
+    applyModalScale();
+  }
+
+  function toggleImageFullscreen() {
+    var modal = el("image-modal");
+    if (!modal) return;
+    if (document.fullscreenElement) {
+      if (document.exitFullscreen) document.exitFullscreen();
+    } else if (modal.requestFullscreen) {
+      modal.requestFullscreen();
+    }
+  }
+
+  function bindProductPage() {
+    on("hero-prev", function () { showGalleryIndex(gallery.index - 1); });
+    on("hero-next", function () { showGalleryIndex(gallery.index + 1); });
+    var heroImage = el("hero-image");
+    if (heroImage) {
+      heroImage.addEventListener("click", function () {
+        var item = gallery.items[gallery.index];
+        if (item) openImageModal(item.url, (item.label || "Product image") + " \u00b7 " + (item.source || ""));
+      });
+    }
+    var stage = el("image-modal-stage");
+    if (stage) {
+      stage.addEventListener("wheel", function (event) {
+        event.preventDefault();
+        zoomImageModal(event.deltaY < 0 ? 1.12 : 0.9);
+      }, { passive: false });
+    }
+    var modal = el("image-modal");
+    if (modal) {
+      modal.addEventListener("mousedown", function (event) {
+        if (event.target === modal || event.target === stage) closeImageModal();
+      });
+    }
+    on("image-modal-close", closeImageModal);
+    on("image-modal-zoom-in", function () { zoomImageModal(1.25); });
+    on("image-modal-zoom-out", function () { zoomImageModal(0.8); });
+    on("image-modal-reset", function () { imageModalScale = 1; applyModalScale(); });
+    on("image-modal-fullscreen", toggleImageFullscreen);
+    document.addEventListener("keydown", function (event) {
+      var modalOpen = modal && !modal.classList.contains("hidden");
+      if (event.key === "Escape" && modalOpen) {
+        closeImageModal();
+        return;
+      }
+      if (modalOpen) {
+        if (event.key === "ArrowLeft") showGalleryIndex(gallery.index - 1);
+        if (event.key === "ArrowRight") showGalleryIndex(gallery.index + 1);
+        if (event.key === "+" || event.key === "=") zoomImageModal(1.25);
+        if (event.key === "-") zoomImageModal(0.8);
+        return;
+      }
+      var page = el("page-product");
+      if (!page || page.hidden) return;
+      if (event.key === "ArrowLeft") showGalleryIndex(gallery.index - 1);
+      if (event.key === "ArrowRight") showGalleryIndex(gallery.index + 1);
+    });
+  }
+  bindProductPage();
+
+  function renderSpecs(p, details) {
+    var rows = [];
+    var attrs = p && p.attributes ? p.attributes : {};
+    Object.keys(attrs).forEach(function (k) {
+      rows.push([k.replaceAll("_", " "), (attrs[k] || []).join(", ")]);
+    });
+    if (details && typeof details === "object") {
+      Object.keys(details).forEach(function (k) {
+        var v = details[k];
+        if (v == null || v === "") return;
+        rows.push([String(k).replaceAll("_", " "), Array.isArray(v) ? v.join(", ") : (typeof v === "object" ? JSON.stringify(v) : v)]);
+      });
+    }
+    var box = el("profile-specs");
+    if (!box) return;
+    if (!rows.length) { box.textContent = "No specifications recorded yet."; return; }
+    box.replaceChildren(kv(rows));
+  }
+
+  function renderIdent(p) {
+    var box = el("profile-ident");
+    if (!box) return;
+    var rows = [
+      ["Status", p.status_label || p.status],
+      ["How the name was found", p.identification_source || p.identification_method || (p.candidate_only ? "not named yet" : "scanner extractor")],
+      ["Confidence", p.identification_confidence == null ? null : Math.round(p.identification_confidence * 100) + "%"],
+      ["Read from the photo", p.identified_from_photo ? "yes" : "no"],
+      ["Why it is not named", p.status_note],
+      ["Previous key", p.previous_product_key]
+    ];
+    var alternatives = p.identification_alternatives || [];
+    if (alternatives.length) {
+      rows.push(["Other candidates considered", alternatives.slice(0, 4).map(function (alternative) {
+        return (alternative.name || alternative.label) + " (" + Math.round((alternative.score || 0) * 100) + "%)";
+      }).join(", ")]);
+    }
+    box.replaceChildren(kv(rows));
+  }
+
+  function renderMeta(p) {
+    var box = el("profile-meta");
+    if (!box) return;
+    var frag = document.createDocumentFragment();
+    var lookup = p.meta_ads_lookup;
+    var summary = p.ads_match_summary || {};
+    var dropped = summary.filtered_out;
+    if (lookup) {
+      frag.append(kv([
+        ["Lookup status", lookup.status],
+        ["Ads returned by the Ad Library", lookup.ad_count],
+        ["Kept as exact product ads", summary.exact],
+        ["Kept as similar product ads", summary.similar],
+        ["Repeated ad rows counted once", dropped],
+        ["Error", lookup.error_text],
+        ["Fetched", lookup.fetched_at]
+      ]));
+    } else {
+      frag.append(document.createTextNode("No Meta ad lookup recorded for this product yet. Identified products are searched automatically."));
+    }
+    var note = document.createElement("p");
+    note.className = "carousel-note";
+    note.textContent = "The exact and similar ads themselves are shown in their own carousels at the top of this page.";
+    frag.append(note);
+    box.replaceChildren(frag);
+  }
+
+  function renderHistory(history) {
+    var box = el("profile-history");
+    if (!box) return;
+    if (!history || !history.length) { box.textContent = "No history recorded yet."; return; }
+    box.replaceChildren(table(
+      ["Date", "Posts", "Views", "Reactions", "Comments", "Forwards"],
+      history.map(function (h) {
+        return [h.date, h.posts, h.views, h.reactions, h.comments, h.forwards];
+      })
+    ));
+  }
+
+  function renderAlerts(alerts) {
+    var box = el("profile-alerts");
+    if (!box) return;
+    if (!alerts || !alerts.length) { box.textContent = "No alerts for this product."; return; }
+    box.replaceChildren(table(
+      ["Kind", "Message", "Created"],
+      alerts.map(function (a) {
+        return [a.kind || a.alert_type, a.message || a.detail, a.created_at || a.date];
+      })
+    ));
+  }
+
+  function renderCompetitors(listings) {
+    var box = el("profile-competitors");
+    if (!box) return;
+    if (!listings || !listings.length) { box.textContent = "No competitor listings yet. Use the button below."; return; }
+    box.replaceChildren(table(
+      ["Title", "Price", "Status", "URL"],
+      listings.map(function (l) {
+        return [l.title, l.price == null ? "" : money(l.price, l.currency, l.unit), l.status, l.url];
+      })
+    ));
+  }
+
+  function renderOffers(offers) {
+    var box = el("profile-images");
+    if (!box) return;
+    if (!offers || !offers.length) { box.textContent = "No offers recorded."; return; }
+    var frag = document.createDocumentFragment();
+    var withImage = offers.filter(function (o) { return o.image; });
+    if (withImage.length) {
+      var strip = document.createElement("div");
+      strip.className = "offer-strip";
+      strip.style.cssText = "display:flex;gap:8px;flex-wrap:wrap;margin-bottom:8px;";
+      withImage.slice(0, 8).forEach(function (o) {
+        var img = document.createElement("img");
+        img.src = o.image;
+        img.alt = o.supplier || "Telegram photo";
+        img.loading = "lazy";
+        img.style.cssText = "width:88px;height:88px;object-fit:cover;border-radius:6px;border:1px solid #e1e6ef;cursor:zoom-in;";
+        img.addEventListener("click", function () { openImageModal(o.image, o.supplier || "Supplier photo"); });
+        strip.append(img);
+      });
+      frag.append(strip);
+    }
+    frag.append(table(
+      ["Supplier", "Price", "MOQ", "Size", "Views", "Post"],
+      offers.map(function (o) {
+        return [o.supplier, money(o.price, o.currency, o.price_unit), o.moq, o.size, o.views, o.telegram_url ? "open" : ""];
+      })
+    ));
+    box.replaceChildren(frag);
+  }
+
+  function renderResearch(p) {
+    var box = el("profile-research");
+    var editBtn = el("profile-research-edit");
+    var saveBtn = el("profile-research-save");
+    if (!box) return;
+    var ev = p.market_research || {};
+    if (!ev || !Object.keys(ev).length) {
+      box.textContent = "No market research recorded yet.";
+      if (editBtn) editBtn.hidden = false;
+      if (saveBtn) saveBtn.hidden = true;
+      return;
+    }
+    box.replaceChildren(kv([
+      ["Google Trends interest", ev.trend_direction || "unknown"],
+      ["Active Meta ads found", ev.active_ads != null ? ev.active_ads : "not entered"],
+      ["Oldest active ad age (days)", ev.oldest_ad_days != null ? ev.oldest_ad_days : "not entered"],
+      ["Social post views (observed)", ev.social_views != null ? ev.social_views : "not entered"],
+      ["Social interactions (observed)", ev.social_interactions != null ? ev.social_interactions : "not entered"],
+      ["Social post URL", ev.social_source_url || "\u2014"],
+      ["Notes / ad evidence", ev.notes || "\u2014"]
+    ]));
+    if (editBtn) editBtn.hidden = false;
+    if (saveBtn) saveBtn.hidden = true;
+  }
+
+  function startResearchEdit() {
+    if (!currentKey) { status("Open a product first.", true); return; }
+    var box = el("profile-research");
+    var editBtn = el("profile-research-edit");
+    var saveBtn = el("profile-research-save");
+    if (!box) return;
+    var ev = currentProduct && (currentProduct.market_research || {});
+    box.replaceChildren(
+      field("Google Trends interest", "select", ev.trend_direction || "unknown", { options: ["unknown", "rising", "stable", "falling"] }),
+      field("Active Meta ads found (enter 0 if none)", "number", ev.active_ads, { min: "0", step: "1" }),
+      field("Age in days of oldest active ad", "number", ev.oldest_ad_days, { min: "0", step: "1" }),
+      field("Social post views (observed)", "number", ev.social_views, { min: "0", step: "1" }),
+      field("Social likes/comments/shares (observed)", "number", ev.social_interactions, { min: "0", step: "1" }),
+      field("Social post URL (optional)", "url", ev.social_source_url),
+      field("Research notes / ad evidence", "textarea", ev.notes)
+    );
+    if (editBtn) editBtn.hidden = true;
+    if (saveBtn) saveBtn.hidden = false;
+  }
+
+  function saveResearch() {
+    if (!currentKey) { status("Open a product first.", true); return; }
+    var trend = el("research-trend-direction");
+    var ads = el("research-active-ads");
+    var age = el("research-oldest-ad-days");
+    var views = el("research-social-views");
+    var interactions = el("research-social-interactions");
+    var source = el("research-social-source-url");
+    var notes = el("research-notes");
+    if (!trend || !ads || !age || !views || !interactions || !source || !notes) {
+      status("Research form not loaded.", true);
+      return;
+    }
+    status("Saving research\u2026");
+    request("/api/research/save", {
+      method: "POST",
+      body: JSON.stringify({
+        product_key: currentKey,
+        trend_direction: trend.value,
+        active_ads: ads.value,
+        oldest_ad_days: age.value,
+        social_views: views.value,
+        social_interactions: interactions.value,
+        social_source_url: source.value,
+        notes: notes.value
+      })
+    }).then(function () {
+      status("Research notes saved; the trend estimate has been updated.");
+      refreshProfile();
+    }).catch(function (err) { status((err && err.message) || err, true); });
+  }
+
+  function renderProfile(p) {
+    if (!p) return;
+    renderHero(p);
+    renderGallery(p);
+    renderAds(p);
+    renderSpecs(p, p.details);
+    renderIdent(p);
+    renderMeta(p);
+    renderResearch(p);
+    renderHistory(p.history);
+    renderAlerts(p.alerts);
+    renderCompetitors(p.competitor_listings);
+    renderOffers(p.offers);
+    status("Profile loaded for \u201c" + (p.product || p.key) + "\u201d.");
+  }
 
   })();
 
