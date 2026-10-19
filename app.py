@@ -296,6 +296,39 @@ async def cancellable_delay(cancel_event, seconds):
     return False
 
 
+def initialize_suppliers_database():
+    """Create the supplier tables and seed them from ``suppliers.xlsx`` once.
+
+    Re-importing the guide happens through ``suppliers_import.py`` /
+    ``import_saved_tabs.py``; startup must never replace rows that were already
+    imported, it only makes sure the schema the dashboard reads exists.
+    """
+    from suppliers_import import dataset_from_rows, ensure_schema, replace_with, rows_from_workbook
+
+    suppliers_db = ROOT / "telegram_research.db"
+    excel_path = ROOT / "suppliers.xlsx"
+    with closing(sqlite3.connect(suppliers_db)) as conn:
+        ensure_schema(conn)
+        if not excel_path.exists():
+            return
+        if conn.execute("SELECT COUNT(*) FROM imported_suppliers").fetchone()[0]:
+            return
+        try:
+            datasets = [
+                data
+                for data in (
+                    dataset_from_rows(name, rows, excel_path.name)
+                    for name, rows in rows_from_workbook(excel_path)
+                )
+                if data
+            ]
+            total = replace_with(conn, datasets)
+        except Exception as error:
+            print(f"Failed to initialize suppliers database: {error}", flush=True)
+            return
+        print(f"Imported {total} suppliers from {excel_path.name}", flush=True)
+
+
 def initialize_database():
     global _current_scan_id, _current_market, _latest_scan_info
     with closing(sqlite3.connect(DB_PATH)) as connection:
@@ -6196,6 +6229,520 @@ def last_integrity_report(scan_id):
         return _integrity_reports.get(scan_id)
 
 
+# ---------------------------------------------------------------------------
+# Platform intelligence.
+#
+# The dashboard has to answer business questions, not display raw counts. Every
+# number here is derived from rows the app already stored (messages, offers,
+# meta ads, sources, scan history) and every panel says why it is showing what
+# it shows. Growth is measured inside the scan window: a product whose posts
+# cluster in the second half of the period is growing, one that clustered in the
+# first half is fading.
+# ---------------------------------------------------------------------------
+
+OPPORTUNITY_LABELS = (
+    (75, "High opportunity"),
+    (55, "Promising"),
+    (35, "Watchlist"),
+    (0, "Low signal"),
+)
+
+
+def opportunity_label(score):
+    for threshold, label in OPPORTUNITY_LABELS:
+        if score >= threshold:
+            return label
+    return OPPORTUNITY_LABELS[-1][1]
+
+
+def product_opportunity_score(views_max, reactions, comments, forwards, sellers,
+                              posts, exact_ads, oldest_ad_days, growth, trend_score,
+                              period_days):
+    """A 0-100 opportunity score with its components, never a bare number.
+
+    Popularity (engagement against the strongest product in the scan), trend
+    growth inside the scan window, supplier availability, live ad activity,
+    discovery frequency and a saturation penalty. A saturated product — many
+    suppliers all pushing the same thing with no advertising behind it — is
+    worth less than a scarce one that advertisers are paying to run.
+    """
+    views_max = max(0, views_max or 0)
+    engagement = max(0, (reactions or 0) + 2 * (comments or 0) + (forwards or 0))
+    popularity = min(100, 45 * math.log10(views_max + 1) / 4 + 25 * math.log10(engagement + 1) / 3)
+    growth_component = max(0, min(100, 50 + (growth or 0)))
+    availability = min(100, (sellers or 0) * 25)
+    ad_activity = min(100, (exact_ads or 0) * 22)
+    if oldest_ad_days:
+        ad_activity = min(100, ad_activity + min(30, oldest_ad_days / 2))
+    frequency = min(100, (posts or 0) * 12)
+    saturation = min(100, max(0, (sellers or 0) - 1) * 18 + max(0, (posts or 0) - 3) * 6)
+    trend = trend_score if trend_score is not None else 50
+
+    components = {
+        "popularity": round(popularity, 1),
+        "trend_growth": round(growth_component, 1),
+        "supplier_availability": round(availability, 1),
+        "ad_activity": round(ad_activity, 1),
+        "discovery_frequency": round(frequency, 1),
+        "market_saturation": round(saturation, 1),
+    }
+    score = (
+        0.22 * popularity
+        + 0.20 * trend
+        + 0.16 * growth_component
+        + 0.14 * ad_activity
+        + 0.12 * availability
+        + 0.10 * frequency
+        - 0.06 * saturation
+    )
+    score = int(max(0, min(100, round(score))))
+    reasons = []
+    if exact_ads:
+        reasons.append(f"{exact_ads} active ad(s) already running on this exact product")
+    if sellers and sellers > 1:
+        reasons.append(f"{sellers} suppliers listing it, so sourcing risk is low")
+    elif sellers == 1:
+        reasons.append("only one supplier listing it, so it is not commoditised yet")
+    if growth and growth > 5:
+        reasons.append(f"posting volume up {round(growth)}% inside the scan window")
+    elif growth is not None and growth < -5:
+        reasons.append(f"posting volume down {round(abs(growth))}% inside the scan window")
+    if views_max:
+        reasons.append(f"best post has {views_max:,} views")
+    if saturation >= 70:
+        reasons.append("market looks saturated: many suppliers pushing the same item")
+    return {
+        "score": score,
+        "label": opportunity_label(score),
+        "components": components,
+        "reasons": reasons,
+        "summary": "Scored on popularity, trend, growth, ad activity, supplier spread, discovery frequency and saturation.",
+    }
+
+
+def _offers_growth(offers, midpoint_iso):
+    """Posting growth inside the scan window, as a percentage change."""
+    if not offers or not midpoint_iso:
+        return None
+    first = second = 0
+    for offer in offers:
+        date_text = str(offer.get("date") or "")
+        if not date_text:
+            continue
+        if date_text >= midpoint_iso:
+            second += 1
+        else:
+            first += 1
+    if first == 0 and second == 0:
+        return None
+    if first == 0:
+        return 100.0
+    return round(((second - first) / first) * 100, 1)
+
+
+def _chat_category_map():
+    """Which category each linked Telegram chat belongs to."""
+    with closing(sqlite3.connect(DB_PATH)) as connection:
+        connection.row_factory = sqlite3.Row
+        rows = connection.execute(
+            """
+            SELECT source.chat_id, category.name AS category
+            FROM sources AS source
+            LEFT JOIN source_categories AS category
+              ON category.category_id = source.category_id
+            WHERE source.chat_id IS NOT NULL
+            """
+        ).fetchall()
+    mapping = {}
+    for row in rows:
+        if row["chat_id"] is not None and row["category"]:
+            mapping[int(row["chat_id"])] = row["category"]
+    return mapping
+
+
+def _new_suppliers_since(scan_id, supplier_names, lookback=5):
+    """Suppliers in this scan that no earlier scan had seen."""
+    names = [name for name in supplier_names if name]
+    if not names or not scan_id:
+        return []
+    with closing(sqlite3.connect(DB_PATH)) as connection:
+        connection.row_factory = sqlite3.Row
+        earlier = connection.execute(
+            """
+            SELECT scan_id FROM scans
+            WHERE status != 'running' AND scan_id != ?
+            ORDER BY completed_at DESC LIMIT ?
+            """,
+            (scan_id, lookback),
+        ).fetchall()
+        earlier_ids = [row["scan_id"] for row in earlier]
+        known = set()
+        if earlier_ids:
+            placeholders = ",".join("?" for _ in earlier_ids)
+            for row in connection.execute(
+                f"SELECT DISTINCT supplier FROM messages WHERE scan_id IN ({placeholders})",
+                earlier_ids,
+            ):
+                known.add(str(row["supplier"] or "").strip())
+    return [name for name in names if name.strip() not in known]
+
+
+def _source_leaderboard(scan_id, limit=12):
+    """Per-channel performance for the selected scan, best first."""
+    if not scan_id:
+        return []
+    with closing(sqlite3.connect(DB_PATH)) as connection:
+        connection.row_factory = sqlite3.Row
+        rows = connection.execute(
+            """
+            SELECT history.source_key, history.products_found, history.products_identified,
+                   history.ads_found, history.suppliers_linked, history.source_score,
+                   source.title, category.name AS category
+            FROM source_scan_history AS history
+            LEFT JOIN sources AS source ON source.source_key = history.source_key
+            LEFT JOIN source_categories AS category ON category.category_id = source.category_id
+            WHERE history.scan_id = ?
+            ORDER BY COALESCE(history.source_score, 0) DESC, history.products_found DESC
+            LIMIT ?
+            """,
+            (scan_id, limit),
+        ).fetchall()
+    leaderboard = []
+    for row in rows:
+        products = int(row["products_found"] or 0)
+        identified = int(row["products_identified"] or 0)
+        leaderboard.append(
+            {
+                "source_key": row["source_key"],
+                "channel": row["title"] or row["source_key"],
+                "category": row["category"] or "",
+                "products_found": products,
+                "products_identified": identified,
+                "identification_rate": round(identified / products * 100) if products else 0,
+                "ads_found": int(row["ads_found"] or 0),
+                "suppliers_linked": int(row["suppliers_linked"] or 0),
+                "source_score": row["source_score"],
+            }
+        )
+    return leaderboard
+
+
+def score_product_opportunities(products, scan=None):
+    """Attach an opportunity score and growth rate to every product.
+
+    The results table, the product page and the dashboard show the same number,
+    so it is computed here from values already present in the payload instead of
+    being recalculated per view.
+    """
+    period_days = 1
+    midpoint_iso = ""
+    if scan and scan.get("start_date") and scan.get("end_date"):
+        try:
+            start = date.fromisoformat(scan["start_date"])
+            end = date.fromisoformat(scan["end_date"])
+        except ValueError:
+            start = end = None
+        if start and end:
+            period_days = max(1, (end - start).days + 1)
+            midpoint = start + timedelta(days=period_days // 2)
+            midpoint_iso = datetime.combine(midpoint, datetime.min.time(), timezone.utc).isoformat()
+    for product in products or []:
+        growth = product.get("growth_rate")
+        if growth is None:
+            growth = _offers_growth(product.get("offers") or [], midpoint_iso)
+        product["growth_rate"] = growth
+        if product.get("opportunity"):
+            continue
+        trend = product.get("trend") or {}
+        ads = product.get("ads_match_summary") or {}
+        product["opportunity"] = product_opportunity_score(
+            product.get("max_views"),
+            product.get("total_reactions"),
+            product.get("total_comments"),
+            product.get("total_forwards"),
+            product.get("sellers"),
+            product.get("posts"),
+            ads.get("exact", 0) or 0,
+            (product.get("market_research") or {}).get("oldest_ad_days"),
+            growth,
+            trend.get("trend_score"),
+            period_days,
+        )
+    return products
+
+
+def platform_overview(scan_id=None, products=None, limit=8):
+    """Everything the executive dashboard needs, in one payload.
+
+    ``products`` is the already-built results list, so the overview never
+    re-reads the message table for product-level numbers.
+    """
+    products = products if products is not None else load_results()
+    scan_id = scan_id or _current_scan_id
+    scan = None
+    if scan_id:
+        with closing(sqlite3.connect(DB_PATH)) as connection:
+            connection.row_factory = sqlite3.Row
+            scan = connection.execute(
+                """
+                SELECT scan_id, start_date, end_date, market, status, category,
+                       scanned_messages, products_found, completed_at, chat_count
+                FROM scans WHERE scan_id = ?
+                """,
+                (scan_id,),
+            ).fetchone()
+    scan = dict(scan) if scan else None
+
+    midpoint_iso = ""
+    period_days = 1
+    if scan and scan.get("start_date") and scan.get("end_date"):
+        start = date.fromisoformat(scan["start_date"])
+        end = date.fromisoformat(scan["end_date"])
+        period_days = max(1, (end - start).days + 1)
+        midpoint = start + timedelta(days=period_days // 2)
+        midpoint_iso = datetime.combine(midpoint, datetime.min.time(), timezone.utc).isoformat()
+
+    score_product_opportunities(products, scan)
+    category_of_chat = _chat_category_map()
+    supplier_totals = {}
+    category_products = {}
+    trending = []
+    opportunities = []
+
+    for product in products:
+        offers = product.get("offers") or []
+        growth = product.get("growth_rate")
+        if growth is None:
+            growth = _offers_growth(offers, midpoint_iso)
+        trend = product.get("trend") or {}
+        pricing = product.get("pricing") or {}
+        ads = product.get("ads_match_summary") or {}
+        exact_ads = ads.get("exact", 0) or 0
+        opportunity = product["opportunity"]
+        opportunities.append(
+            {
+                "key": product.get("key"),
+                "product": product.get("product"),
+                "status": product.get("status"),
+                "status_label": product.get("status_label"),
+                "opportunity": opportunity["score"],
+                "label": opportunity["label"],
+                "trend_score": trend.get("trend_score"),
+                "growth_rate": growth,
+                "mentions": product.get("posts"),
+                "sellers": product.get("sellers"),
+                "exact_ads": exact_ads,
+                "similar_ads": ads.get("similar", 0) or 0,
+                "gallery_count": product.get("gallery_count", 0),
+                "lowest_price": pricing.get("estimated_cost"),
+                "currency": pricing.get("currency"),
+                "margin_percent": pricing.get("profit_margin_percent"),
+                "why": opportunity["reasons"][:3] + ([trend["basis"]] if trend.get("basis") else []),
+            }
+        )
+
+        sources_for_product = set()
+        for offer in offers:
+            chat_id = offer.get("chat_id")
+            category = category_of_chat.get(int(chat_id)) if chat_id is not None else None
+            if category:
+                sources_for_product.add(category)
+            supplier = str(offer.get("supplier") or "").strip()
+            if supplier:
+                entry = supplier_totals.setdefault(
+                    supplier,
+                    {
+                        "supplier": supplier, "posts": 0, "products": set(), "views": 0,
+                        "reactions": 0, "first": "", "last": "", "channels": set(),
+                        "first_half": 0, "second_half": 0,
+                    },
+                )
+                entry["posts"] += 1
+                entry["products"].add(product.get("key"))
+                entry["views"] = max(entry["views"], offer.get("views") or 0)
+                entry["reactions"] += offer.get("reactions") or 0
+                if offer.get("channel"):
+                    entry["channels"].add(offer["channel"])
+                date_text = str(offer.get("date") or "")
+                if date_text:
+                    entry["first"] = min(entry["first"] or date_text, date_text)
+                    entry["last"] = max(entry["last"] or date_text, date_text)
+                    if midpoint_iso and date_text >= midpoint_iso:
+                        entry["second_half"] += 1
+                    else:
+                        entry["first_half"] += 1
+        for category in sources_for_product:
+            category_products.setdefault(category, []).append(
+                {
+                    "key": product.get("key"),
+                    "product": product.get("product"),
+                    "opportunity": opportunity["score"],
+                    "label": opportunity["label"],
+                    "exact_ads": exact_ads,
+                    "sellers": product.get("sellers"),
+                }
+            )
+        trending.append(
+            {
+                "key": product.get("key"),
+                "product": product.get("product"),
+                "trend_score": trend.get("trend_score"),
+                "growth_rate": growth,
+                "mentions": product.get("posts"),
+                "exact_ads": exact_ads,
+                "sources": len(sources_for_product),
+                "opportunity": opportunity["score"],
+                "why": opportunity["reasons"][:2] + ([trend["basis"]] if trend.get("basis") else []),
+            }
+        )
+
+    trending.sort(key=lambda item: (item["opportunity"], item["trend_score"] or 0, item["mentions"] or 0), reverse=True)
+    opportunities.sort(key=lambda item: item["opportunity"], reverse=True)
+    hot_by_category = []
+    for category, entries in category_products.items():
+        entries.sort(key=lambda item: item["opportunity"], reverse=True)
+        hot_by_category.append({"category": category, "products": entries[:limit]})
+    hot_by_category.sort(key=lambda item: item["products"][0]["opportunity"] if item["products"] else 0, reverse=True)
+
+    supplier_names = list(supplier_totals.keys())
+    new_suppliers = set(_new_suppliers_since(scan_id, supplier_names))
+    suppliers = []
+    for entry in supplier_totals.values():
+        growth = None
+        if entry["first_half"] or entry["second_half"]:
+            if entry["first_half"] == 0:
+                growth = 100.0
+            else:
+                growth = round(
+                    (entry["second_half"] - entry["first_half"]) / entry["first_half"] * 100, 1
+                )
+        suppliers.append(
+            {
+                "supplier": entry["supplier"],
+                "posts": entry["posts"],
+                "growth_rate": growth,
+                "first_half_posts": entry["first_half"],
+                "second_half_posts": entry["second_half"],
+                "product_count": len(entry["products"]),
+                "max_views": entry["views"],
+                "reactions": entry["reactions"],
+                "channels": sorted(entry["channels"])[:4],
+                "first_post": entry["first"],
+                "last_post": entry["last"],
+                "is_new": entry["supplier"] in new_suppliers,
+            }
+        )
+    suppliers.sort(key=lambda item: (item["product_count"], item["posts"]), reverse=True)
+    growing_suppliers = sorted(
+        [
+            supplier
+            for supplier in suppliers
+            if supplier["growth_rate"] is not None and supplier["growth_rate"] > 0
+        ],
+        key=lambda item: (item["growth_rate"], item["product_count"]),
+        reverse=True,
+    )[:limit]
+
+    identified = sum(1 for product in products if not product.get("candidate_only"))
+    review_needed = sum(
+        1 for product in products if product.get("status") == PRODUCT_STATUS_AWAITING_REVIEW
+    )
+    failed = sum(1 for product in products if product.get("status") == PRODUCT_STATUS_FAILED)
+    with closing(sqlite3.connect(DB_PATH)) as connection:
+        connection.row_factory = sqlite3.Row
+        ads_collected = int(
+            connection.execute(
+                "SELECT COUNT(DISTINCT ad_id) FROM meta_ads WHERE scan_id = ?", (scan_id,)
+            ).fetchone()[0]
+            or 0
+        ) if scan_id else 0
+        scan_totals = connection.execute(
+            """
+            SELECT COUNT(*) AS total,
+                   SUM(CASE WHEN status = 'completed' THEN 1 ELSE 0 END) AS completed,
+                   SUM(CASE WHEN status = 'cancelled' THEN 1 ELSE 0 END) AS cancelled,
+                   SUM(CASE WHEN status = 'failed' THEN 1 ELSE 0 END) AS failed
+            FROM scans
+            """
+        ).fetchone()
+        source_totals = connection.execute(
+            """
+            SELECT COUNT(*) AS sources,
+                   SUM(CASE WHEN last_scanned_at IS NOT NULL THEN 1 ELSE 0 END) AS scanned,
+                   AVG(source_score) AS average_score
+            FROM sources
+            """
+        ).fetchone()
+        category_totals = connection.execute(
+            "SELECT COUNT(*) AS categories FROM source_categories"
+        ).fetchone()
+
+    total_scans = int(scan_totals["total"] or 0)
+    completed_scans = int(scan_totals["completed"] or 0)
+    metrics = {
+        "products_total": len(products),
+        "products_identified": identified,
+        "products_review": review_needed,
+        "products_failed": failed,
+        "suppliers_total": len(suppliers),
+        "suppliers_new": len(new_suppliers),
+        "sources_total": int(source_totals["sources"] or 0),
+        "sources_scanned": int(source_totals["scanned"] or 0),
+        "scan_channels": int((scan or {}).get("chat_count") or 0),
+        "scan_category": (scan or {}).get("category") or "",
+        "source_average_score": round(float(source_totals["average_score"] or 0), 1) if source_totals["average_score"] is not None else None,
+        "categories_total": int(category_totals["categories"] or 0),
+        "categories_active": len(category_products),
+        "ads_collected": ads_collected,
+        "scans_total": total_scans,
+        "scans_completed": completed_scans,
+        "scan_success_rate": round(completed_scans / total_scans * 100) if total_scans else None,
+        "review_needed": review_needed,
+    }
+
+    return {
+        "scan": scan,
+        "metrics": metrics,
+        "trending": trending[:limit],
+        "opportunities": opportunities[:limit],
+        "hot_by_category": hot_by_category,
+        "suppliers": {
+            "top": suppliers[:limit],
+            "growing": growing_suppliers,
+            "new": [supplier for supplier in suppliers if supplier["is_new"]][:limit],
+        },
+        "sources": _source_leaderboard(scan_id),
+        "generated_at": datetime.now(timezone.utc).isoformat(),
+        "empty_state": (
+            "No products for this scan yet."
+            if not products
+            else ""
+        ),
+    }
+
+
+_overview_cache = {"key": None, "at": 0.0, "payload": None}
+OVERVIEW_CACHE_SECONDS = 5.0
+
+
+def _cached_overview(scan_id, ttl=OVERVIEW_CACHE_SECONDS):
+    """Build the overview payload, reusing it for a few seconds.
+
+    The overview derives everything from ``load_results()``, which rebuilds the
+    whole product list. The dashboard polls this endpoint, so without a short
+    cache every poll would rebuild the same list twice (once for the table and
+    once for the overview).
+    """
+    key = (str(DB_PATH), scan_id)
+    now = time.monotonic()
+    cache = _overview_cache
+    if cache["payload"] is not None and cache["key"] == key and now - cache["at"] < ttl:
+        return cache["payload"]
+    payload = platform_overview(scan_id, load_results())
+    cache.update({"key": key, "at": now, "payload": payload})
+    return payload
+
+
 def count_products_by_status(products):
     counts = {
         PRODUCT_STATUS_IDENTIFIED: 0,
@@ -6620,6 +7167,15 @@ def load_results():
     scan_market = scan["market"]
     groups = {}
     now = datetime.now(timezone.utc)
+    # The scan's own window defines the midpoint used by every growth figure.
+    period_start = date.fromisoformat(scan["start_date"])
+    period_end = date.fromisoformat(scan["end_date"])
+    window_days = max(1, (period_end - period_start).days + 1)
+    midpoint_iso = datetime.combine(
+        period_start + timedelta(days=window_days // 2),
+        datetime.min.time(),
+        timezone.utc,
+    ).isoformat()
     for row in rows:
         item = dict(row)
         item_attributes = json.loads(item["attributes_json"] or "{}")
@@ -6800,6 +7356,20 @@ def load_results():
         status, status_note = product_status_for(
             _current_scan_id, normalized, group["candidate_only"], identification
         )
+        growth = _offers_growth(offers, midpoint_iso)
+        opportunity = product_opportunity_score(
+            max(views) if views else 0,
+            sum(group["reactions"]),
+            sum(group["comments"]),
+            sum(group["forwards"]),
+            seller_count,
+            len(offers),
+            len(exact_ads),
+            evidence.get("oldest_ad_days"),
+            growth,
+            trend.get("trend_score"),
+            window_days,
+        )
         gallery = product_gallery(
             offers,
             exact_ads + similar_ads,
@@ -6846,6 +7416,8 @@ def load_results():
                 ),
                 "pricing": pricing,
                 "trend": trend,
+                "growth_rate": growth,
+                "opportunity": opportunity,
                 "attributes": group["attributes"],
                 "candidate_only": group["candidate_only"],
                 "identified_from_photo": bool(
@@ -6904,6 +7476,38 @@ class Handler(BaseHTTPRequestHandler):
             self.send_header("Content-Length", str(len(page)))
             self.end_headers()
             self.wfile.write(page)
+        elif parsed.path == "/api/suppliers":
+            suppliers_db = ROOT / "telegram_research.db"
+            if not suppliers_db.exists():
+                self.send_json({"suppliers": [], "categories": []})
+                return
+            try:
+                with closing(sqlite3.connect(suppliers_db)) as connection:
+                    connection.row_factory = sqlite3.Row
+                    rows = connection.execute(
+                        "SELECT * FROM imported_suppliers ORDER BY category_sheet, row_number, id"
+                    ).fetchall()
+                    categories = [r["category_sheet"] for r in connection.execute("SELECT DISTINCT category_sheet FROM imported_suppliers").fetchall()]
+                    sheets = []
+                    if connection.execute(
+                        "SELECT 1 FROM sqlite_master WHERE type='table' AND name='supplier_sheets'"
+                    ).fetchone():
+                        for sheet in connection.execute(
+                            "SELECT sheet_name, gid, header_row, columns_json, row_count FROM supplier_sheets ORDER BY sheet_name"
+                        ):
+                            item = dict(sheet)
+                            try:
+                                item["columns"] = json.loads(item.pop("columns_json") or "[]")
+                            except ValueError:
+                                item["columns"] = []
+                            sheets.append(item)
+                self.send_json({
+                    "suppliers": [dict(row) for row in rows],
+                    "categories": categories,
+                    "sheets": sheets,
+                })
+            except Exception as error:
+                self.send_json({"error": str(error)}, 500)
         elif parsed.path == "/api/settings":
             try:
                 self.send_json(
@@ -6963,6 +7567,12 @@ class Handler(BaseHTTPRequestHandler):
                     """
                 ).fetchall()
             self.send_json({"scans": [dict(scan) for scan in scans]})
+        elif parsed.path == "/api/overview":
+            scan_id = _current_scan_id or (_latest_scan_info or {}).get("scan_id")
+            try:
+                self.send_json(_cached_overview(scan_id))
+            except (OSError, sqlite3.Error, ValueError) as error:
+                self.send_json({"error": str(error)}, 500)
         elif parsed.path == "/api/sources":
             scan_id = _current_scan_id or (_latest_scan_info or {}).get("scan_id")
             try:
@@ -6984,6 +7594,7 @@ class Handler(BaseHTTPRequestHandler):
                 ).fetchone() if (_current_scan_id or _latest_scan_info) else None
             products = load_results()
             scan_id = scan["scan_id"] if scan else None
+            score_product_opportunities(products, dict(scan) if scan else None)
             if scan_id:
                 start_meta_ads_sync(scan_id, products)
                 start_photo_identification(scan_id)
@@ -7179,6 +7790,51 @@ class Handler(BaseHTTPRequestHandler):
     def do_POST(self):
         global _current_scan_id, _latest_scan_info
         parsed = urlparse(self.path)
+        if parsed.path == "/api/suppliers/upload":
+            content_length = int(self.headers.get("Content-Length", "0"))
+            if content_length <= 0 or content_length > 10 * 1024 * 1024:
+                self.send_json({"error": "Supplier Excel file must be smaller than 10 MB."}, 413)
+                return
+            try:
+                raw_data = self.rfile.read(content_length)
+                content_type = self.headers.get("Content-Type", "")
+                file_bytes = raw_data
+                if "multipart/form-data" in content_type:
+                    boundary = content_type.split("boundary=")[-1].encode("utf-8")
+                    parts = raw_data.split(boundary)
+                    for part in parts:
+                        if b"filename=" in part or b'name="file"' in part:
+                            header_end = part.find(b"\r\n\r\n")
+                            if header_end != -1:
+                                file_bytes = part[header_end + 4 :].rstrip(b"\r\n--")
+                                break
+                elif content_type.startswith("application/json"):
+                    req_json = json.loads(raw_data.decode("utf-8"))
+                    file_bytes = base64.b64decode(req_json.get("file_base64", ""))
+
+                excel_path = ROOT / "suppliers.xlsx"
+                excel_path.write_bytes(file_bytes)
+
+                initialize_suppliers_database()
+
+                suppliers_db = ROOT / "telegram_research.db"
+                with closing(sqlite3.connect(suppliers_db)) as connection:
+                    connection.row_factory = sqlite3.Row
+                    rows = connection.execute(
+                        "SELECT id, category_sheet, supplier_name, category, phone, city, notes FROM imported_suppliers ORDER BY id"
+                    ).fetchall()
+                    categories = [r["category_sheet"] for r in connection.execute("SELECT DISTINCT category_sheet FROM imported_suppliers").fetchall()]
+
+                self.send_json({
+                    "success": True,
+                    "count": len(rows),
+                    "categories": categories,
+                    "suppliers": [dict(row) for row in rows]
+                })
+            except Exception as error:
+                self.send_json({"error": str(error)}, 400)
+            return
+
         if parsed.path == "/api/image-search":
             content_length = int(self.headers.get("Content-Length", "0"))
             if content_length <= 0 or content_length > MAX_IMAGE_UPLOAD_BYTES + 128 * 1024:
@@ -7818,10 +8474,61 @@ class Handler(BaseHTTPRequestHandler):
         print(f"Local dashboard: {format_string % args}", flush=True)
 
 
-def main():
+def dashboard_responds(url, timeout=3.0):
+    """True when a live dashboard answers on ``url``."""
+    try:
+        with urlopen(f"{url}/api/status", timeout=timeout) as response:
+            return getattr(response, "status", 200) == 200
+    except (HTTPError, URLError, OSError, ValueError):
+        return False
+
+
+def port_is_taken(host, port, timeout=1.0):
+    """True when a process is already listening on ``host:port``."""
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as probe:
+        probe.settimeout(timeout)
+        try:
+            probe.connect((host, port))
+        except OSError:
+            return False
+    return True
+
+
+def main(port=PORT):
+    initialize_suppliers_database()
     initialize_database()
-    server = ThreadingHTTPServer((HOST, PORT), Handler)
-    url = f"http://{HOST}:{PORT}"
+    url = f"http://{HOST}:{port}"
+    # A dashboard that never shut down keeps the port bound. On Windows a new
+    # server can still bind over it, so "the server started" while the browser
+    # talked to the dead copy and showed a blank page. Check first, and say
+    # what is wrong instead of opening a browser that cannot load anything.
+    if dashboard_responds(url):
+        print(f"The dashboard is already running at {url}", flush=True)
+        print("Opened that window instead of starting a second copy.", flush=True)
+        webbrowser.open(url)
+        return
+    if port_is_taken(HOST, port):
+        print(
+            f"Port {port} is held by a process that is not answering.",
+            flush=True,
+        )
+        print(
+            "That is usually an older dashboard that did not shut down.",
+            flush=True,
+        )
+        print(
+            f"Close it, or start on another port: python app.py --port {port + 1}",
+            flush=True,
+        )
+        raise SystemExit(1)
+    try:
+        server = ThreadingHTTPServer((HOST, port), Handler)
+    except OSError as error:
+        print(f"The dashboard could not listen on {url}: {error}", flush=True)
+        print(f"Start it on another port: python app.py --port {port + 1}", flush=True)
+        raise SystemExit(1)
+    # Keep Ctrl+C instant even while a request is being served.
+    server.daemon_threads = True
     print(f"Product research dashboard: {url}", flush=True)
     print("This server is only available on this computer.", flush=True)
     webbrowser.open(url)
@@ -7844,4 +8551,14 @@ if __name__ == "__main__":
         purge_weak_product_identifications()
         print("Purged weak photo identifications from", DB_PATH, flush=True)
     else:
-        main()
+        requested_port = PORT
+        if "--port" in sys.argv[1:]:
+            try:
+                requested_port = int(sys.argv[sys.argv.index("--port") + 1])
+            except (IndexError, ValueError):
+                print(
+                    "--port needs a number, for example: python app.py --port 8766",
+                    flush=True,
+                )
+                raise SystemExit(2)
+        main(requested_port)

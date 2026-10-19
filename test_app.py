@@ -2413,5 +2413,269 @@ class SourceCatalogueTests(unittest.TestCase):
         self.assertIsNotNone(source[2])
 
 
+class OverviewIntelligenceTests(unittest.TestCase):
+    """The dashboard overview must describe the products it is showing."""
+
+    def setUp(self):
+        self.temp_dir = tempfile.TemporaryDirectory()
+        self.original_db = app.DB_PATH
+        self.original_entities = app._chat_entities
+        self.original_current = app._current_scan_id
+        self.original_latest = app._latest_scan_info
+        app.DB_PATH = Path(self.temp_dir.name) / "research.sqlite3"
+        app.initialize_database()
+        app._chat_entities = {
+            -1001: SimpleNamespace(title="Electronics Deals DZ", username="electronicsdz"),
+        }
+        app._current_scan_id = None
+        app._latest_scan_info = {}
+        self.folder = Path(self.temp_dir.name)
+
+    def tearDown(self):
+        app.DB_PATH = self.original_db
+        app._chat_entities = self.original_entities
+        app._current_scan_id = self.original_current
+        app._latest_scan_info = self.original_latest
+        self.temp_dir.cleanup()
+
+    def _scan(self, scan_id="overview-scan", category="", status="completed"):
+        with closing(sqlite3.connect(app.DB_PATH)) as connection:
+            connection.execute(
+                """
+                INSERT INTO scans (
+                    scan_id, start_date, end_date, market, completed_at, status,
+                    extractor_version, category
+                ) VALUES (?, '2026-10-01', '2026-10-16', 'Algeria',
+                          '2026-10-16T12:00:00+00:00', ?, 3, ?)
+                """,
+                (scan_id, status, category),
+            )
+            connection.commit()
+        return scan_id
+
+    def _product(self, key, name, **overrides):
+        product = {
+            "key": key,
+            "product": name,
+            "status": app.PRODUCT_STATUS_IDENTIFIED,
+            "status_label": "Identified",
+            "candidate_only": False,
+            "offers": [],
+            "posts": 1,
+            "sellers": 1,
+            "max_views": 1000,
+            "total_reactions": 10,
+            "total_comments": 2,
+            "total_forwards": 1,
+            "trend": {"trend_score": 70, "basis": "Mentions are rising"},
+            "pricing": {"estimated_cost": 1200, "currency": "DZD", "profit_margin_percent": 40},
+            "ads_match_summary": {"exact": 3, "similar": 5},
+            "gallery_count": 2,
+            "opportunity": {
+                "score": 80,
+                "label": "HIGH OPPORTUNITY",
+                "reasons": ["3 exact active ads", "two suppliers listing it"],
+            },
+            "growth_rate": 25.0,
+        }
+        product.update(overrides)
+        return product
+
+    def _offer(self, chat_id, supplier, date_text, views=100):
+        return {
+            "chat_id": chat_id,
+            "supplier": supplier,
+            "channel": "Electronics Deals DZ",
+            "date": date_text,
+            "views": views,
+            "reactions": 5,
+            "comments": 1,
+            "forwards": 0,
+            "price": 1200,
+            "currency": "DZD",
+            "message_id": 1,
+        }
+
+    def test_the_overview_counts_every_product_it_is_shown(self):
+        products = [
+            self._product("a", "Item1001"),
+            self._product("b", "Item1002"),
+            self._product(
+                "c",
+                "Item1003",
+                status=app.PRODUCT_STATUS_AWAITING_REVIEW,
+                candidate_only=True,
+            ),
+        ]
+
+        overview = app.platform_overview(None, products)
+
+        metrics = overview["metrics"]
+        self.assertEqual(metrics["products_total"], 3)
+        self.assertEqual(metrics["products_identified"], 2)
+        self.assertEqual(metrics["review_needed"], 1)
+        self.assertEqual(overview["empty_state"], "")
+        self.assertEqual(len(overview["trending"]), 3)
+
+    def test_trending_is_ranked_by_opportunity_and_says_why(self):
+        weak = self._product("weak", "Item1001", opportunity={"score": 40, "label": "LOW", "reasons": ["thin demand"]})
+        strong = self._product(
+            "strong",
+            "Item1002",
+            opportunity={"score": 91, "label": "HIGH OPPORTUNITY", "reasons": ["7 exact active ads"]},
+        )
+
+        overview = app.platform_overview(None, [weak, strong], limit=1)
+
+        self.assertEqual(len(overview["trending"]), 1)
+        self.assertEqual(overview["trending"][0]["key"], "strong")
+        self.assertIn("7 exact active ads", overview["trending"][0]["why"])
+
+    def test_hot_products_are_grouped_by_their_channel_category(self):
+        csv_path = self.folder / "Electronics.csv"
+        csv_path.write_text(
+            "Channel Name,Telegram\nElectronics Deals DZ,@electronicsdz\n",
+            encoding="utf-8",
+        )
+        app.import_sources_from_workbook(csv_path)
+        app.link_sources_to_chats()
+        scan_id = self._scan(category="Electronics")
+
+        overview = app.platform_overview(
+            scan_id,
+            [self._product("a", "Item1001", offers=[self._offer(-1001, "Supplier One", "2026-10-10T10:00:00+00:00")])],
+        )
+
+        self.assertEqual(overview["metrics"]["categories_active"], 1)
+        self.assertEqual([group["category"] for group in overview["hot_by_category"]], ["Electronics"])
+        self.assertEqual(overview["hot_by_category"][0]["products"][0]["key"], "a")
+
+    def test_a_supplier_pushing_more_product_late_in_the_scan_shows_growth(self):
+        scan_id = self._scan()
+        offers = [
+            self._offer(-1001, "Supplier One", "2026-10-02T10:00:00+00:00"),
+            self._offer(-1001, "Supplier One", "2026-10-12T10:00:00+00:00"),
+            self._offer(-1001, "Supplier One", "2026-10-14T10:00:00+00:00"),
+            self._offer(-1001, "Supplier One", "2026-10-15T10:00:00+00:00"),
+        ]
+
+        overview = app.platform_overview(scan_id, [self._product("a", "Item1001", offers=offers)])
+
+        top = overview["suppliers"]["top"][0]
+        self.assertEqual(top["supplier"], "Supplier One")
+        self.assertEqual(top["posts"], 4)
+        self.assertEqual(top["growth_rate"], 200.0)
+        self.assertTrue(top["is_new"])
+        self.assertEqual(len(overview["suppliers"]["growing"]), 1)
+        self.assertEqual(overview["metrics"]["suppliers_new"], 1)
+
+    def test_the_scan_category_travels_with_the_overview(self):
+        scan_id = self._scan(category="Beauty")
+
+        overview = app.platform_overview(scan_id, [self._product("a", "Item1001")])
+
+        self.assertEqual(overview["scan"]["scan_id"], scan_id)
+        self.assertEqual(overview["scan"]["category"], "Beauty")
+        self.assertEqual(overview["metrics"]["products_total"], 1)
+
+    def test_an_empty_scan_explains_itself_instead_of_showing_blank_widgets(self):
+        overview = app.platform_overview(None, [])
+
+        self.assertEqual(overview["metrics"]["products_total"], 0)
+        self.assertEqual(overview["trending"], [])
+        self.assertEqual(overview["hot_by_category"], [])
+        self.assertEqual(overview["suppliers"], {"top": [], "growing": [], "new": []})
+        self.assertEqual(overview["sources"], [])
+        self.assertTrue(overview["empty_state"])
+
+    def test_the_overview_endpoint_reuses_a_payload_built_seconds_ago(self):
+        calls = []
+        original = app.platform_overview
+
+        def counting(scan_id, products=None, limit=8):
+            calls.append(scan_id)
+            return original(scan_id, products, limit)
+
+        app.platform_overview = counting
+        app._overview_cache.update({"key": None, "at": 0.0, "payload": None})
+        try:
+            first = app._cached_overview(None)
+            second = app._cached_overview(None)
+        finally:
+            app.platform_overview = original
+            app._overview_cache.update({"key": None, "at": 0.0, "payload": None})
+
+        self.assertEqual(len(calls), 1)
+        self.assertIs(first, second)
+
+    def test_a_product_without_ads_or_pricing_still_gets_scored(self):
+        sparse = self._product(
+            "sparse",
+            "Item1001",
+            trend={},
+            pricing={},
+            ads_match_summary={},
+            opportunity=None,
+            growth_rate=None,
+        )
+        sparse.pop("opportunity")
+
+        overview = app.platform_overview(None, [sparse])
+
+        row = overview["trending"][0]
+        self.assertEqual(row["key"], "sparse")
+        self.assertIsInstance(row["opportunity"], int)
+        self.assertGreaterEqual(row["opportunity"], 0)
+        self.assertLessEqual(row["opportunity"], 100)
+
+
+class SupplierGuideImportTests(unittest.TestCase):
+    """The guide is imported exactly as written, header row included."""
+
+    def test_a_contact_link_header_still_becomes_the_header(self):
+        from suppliers_import import dataset_from_rows
+
+        # The Telegram-channel worksheet names its first column with a link,
+        # not a shop name, and starts with an empty grid row.
+        rows = [
+            ["" for _ in range(4)],
+            ["1", "رابط قناة التلغرام", "نوع المنتجات", "العمود 1"],
+            ["2", "https://t.me/ElrayessShop", "متنوع", ""],
+            ["3", "https://t.me/grosvip", "اكسسوار الهواتف", ""],
+            ["4", "", "", ""],
+        ]
+
+        data = dataset_from_rows("Ch telegrame", rows, "preview:681208861", "681208861")
+
+        self.assertEqual(data["header_row"], 2)
+        self.assertEqual(data["headers"][0], "رابط قناة التلغرام")
+        self.assertEqual(data["fields"], {"telegram": 0, "product_type": 1})
+        # The header row must not be imported as if it were a supplier.
+        self.assertEqual(len(data["records"]), 2)
+        record = data["records"][0]
+        self.assertEqual(record["supplier_name"], "https://t.me/ElrayessShop")
+        self.assertEqual(record["telegram"], "https://t.me/ElrayessShop")
+        self.assertEqual(record["product_type"], "متنوع")
+
+    def test_the_shop_name_header_maps_every_contact_column(self):
+        from suppliers_import import dataset_from_rows
+
+        rows = [
+            ["Nom De la Boutique", "Numéro De Téléphone", "Whatsapp", "Telegram", "type de produit"],
+            ["Boutique A", "0550000001", "0550000001", "//", "Textile"],
+            ["", "", "", "", ""],
+        ]
+
+        data = dataset_from_rows("TEXTILE", rows, "preview:831696121", "831696121")
+
+        self.assertEqual(data["header_row"], 1)
+        self.assertEqual(len(data["records"]), 1)
+        record = data["records"][0]
+        self.assertEqual(record["supplier_name"], "Boutique A")
+        self.assertEqual(record["phone"], "0550000001")
+        self.assertEqual(record["whatsapp"], "0550000001")
+        self.assertEqual(record["product_type"], "Textile")
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -1210,6 +1210,65 @@
   .category-body[hidden] { display: none; }
   .chat-option.unavailable { opacity: .6; }
   .chat-option .chat-source-state { font-size: 10.5px; color: var(--muted); margin-left: 6px; }
+  /* ==========================================================================
+     OVERVIEW INTELLIGENCE  (executive tiles, trending, suppliers, sources)
+     ========================================================================== */
+  /* ==========================================================================
+     OVERVIEW INTELLIGENCE  (executive tiles, trending, suppliers, sources)
+     ========================================================================== */
+  button.metric-card, button.metric-card:hover:not(:disabled), button.metric-card:active:not(:disabled) {
+    display: block; width: 100%; text-align: left; font: inherit;
+    color: inherit; background: var(--surface); border-color: var(--border); box-shadow: var(--sh-1);
+  }
+  button.metric-card:hover:not(:disabled) { border-color: #cbd7e6; box-shadow: var(--sh-3); background: var(--surface); }
+  .metric-card:nth-child(5)::before { content: "\25A4"; background: #eef1fb; color: #4b5bd6; }
+  .metric-card:nth-child(6)::before { content: "f"; background: #e7f0fa; color: #2f6ea8; }
+  .metric-card:nth-child(7)::before { content: "\2713"; background: #e9f7ef; color: var(--ok); }
+  .metric-card:nth-child(8)::before { content: "!"; background: #fdf0d5; color: var(--warn); }
+  .metric-card:nth-child(6), .metric-card:nth-child(7), .metric-card:nth-child(8) { border-top: 0; }
+  .overview-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .overview-grid .panel { padding: 16px 18px 18px; min-width: 0; }
+  .ov-table { width: 100%; min-width: 0; border-collapse: collapse; font-size: 12.5px; font-variant-numeric: tabular-nums; }
+  .ov-table thead th {
+    position: static; padding: 0 8px 6px; border-bottom: 1px solid var(--border-2);
+    color: var(--muted); background: transparent; box-shadow: none;
+    font-size: 10.5px; font-weight: 800; letter-spacing: .07em; text-transform: uppercase; white-space: nowrap;
+  }
+  .ov-table td { padding: 7px 8px; border-bottom: 1px solid #eef2f7; vertical-align: middle; max-width: 220px; }
+  .ov-table tbody tr { cursor: pointer; background: transparent; }
+  .ov-table tbody tr:hover { background: #f6f9ff; }
+  .ov-table tbody tr:nth-child(even) { background: transparent; }
+  .ov-name { color: var(--ink); font-size: 12.5px; font-weight: 700; line-height: 1.35;
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 220px; }
+  .ov-sub { color: var(--muted-2); font-size: 11px; font-weight: 500; }
+  .ov-num { text-align: right; white-space: nowrap; }
+  .ov-why { color: var(--muted); font-size: 11px; line-height: 1.4; max-width: 200px; }
+  .ov-score { display: inline-block; min-width: 32px; padding: 2px 7px; border-radius: 6px; text-align: center;
+    font-size: 11.5px; font-weight: 800; }
+  .ov-score.good { background: #e2f6ea; color: #0a6b3d; }
+  .ov-score.mid  { background: #fdf0d5; color: #8a5a00; }
+  .ov-score.low  { background: #eef1f6; color: #5a6a7f; }
+  .ov-up { color: #0a6b3d; font-weight: 700; }
+  .ov-down { color: #a12f2f; font-weight: 700; }
+  .ov-bar { height: 6px; min-width: 56px; border-radius: 999px; background: #eef1f6; overflow: hidden; }
+  .ov-bar > span { display: block; height: 100%; border-radius: 999px; background: linear-gradient(90deg, #4f8dfd, #7b5cf5); }
+  .ov-cat-group { padding: 7px 0 5px; }
+  .ov-cat-group + .ov-cat-group { border-top: 1px solid #eef2f7; }
+  .ov-cat-head { display: flex; justify-content: space-between; gap: 8px; margin-bottom: 3px;
+    color: var(--ink); font-size: 12px; font-weight: 750; }
+  .ov-cat-head span:last-child { color: var(--muted-2); font-size: 11px; font-weight: 500; }
+  .ov-cat-item { display: flex; justify-content: space-between; align-items: center; gap: 8px;
+    padding: 3px 0; color: var(--ink-soft); font-size: 12px; cursor: pointer; }
+  .ov-cat-item > span:first-child { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .ov-cat-item:hover { color: var(--teal-700); }
+  .ov-subhead { margin: 12px 0 4px; color: var(--muted); font-size: 10.5px; font-weight: 800;
+    letter-spacing: .07em; text-transform: uppercase; }
+  .ov-list { display: grid; gap: 2px; }
+  .ov-list-row { display: flex; justify-content: space-between; gap: 8px; padding: 3px 0; font-size: 12px; color: var(--ink-soft); }
+  .ov-empty { padding: 12px 2px; color: var(--muted-2); font-size: 12.5px; line-height: 1.5; }
+  .overview-live { margin: 12px 0 0; color: var(--muted-2); font-size: 11.5px; }
+  .overview-live.err { color: #a12f2f; }
+  @media (max-width: 1100px) { .overview-grid { grid-template-columns: 1fr; } }
 </style>
 </head>
 
@@ -1236,6 +1295,7 @@
           <a class="nav-link" href="#" data-page="products">Product Search</a>
           <a class="nav-link" href="#" data-page="image">Image Search</a>
         </div>
+        <a class="nav-link" href="#" data-page="suppliers"><span class="nav-icon">★</span>Suppliers</a>
         <a class="nav-link" href="#" data-page="reports"><span class="nav-icon">▤</span>Reports</a>
         <a class="nav-link" href="#" data-page="settings"><span class="nav-icon">◎</span>Settings</a>
 </nav>
@@ -1294,77 +1354,81 @@
 
 
 
-        <section class="metric-grid" aria-label="Scan overview">
-
-          <button class="metric-card" type="button" data-dashboard-metric="products" aria-label="Open products in the selected scan">
-            <div class="metric-label"><span>Product / offer records</span><span>▦</span></div>
-            <div id="metric-messages" class="metric-value">—</div>
-
-            <div id="metric-period" class="metric-foot">Click to inspect the selected Telegram scan</div>
+        <section class="metric-grid" aria-label="Executive summary">
+          <button class="metric-card" type="button" data-ov-goto="products" aria-label="Open the product table">
+            <div class="metric-label"><span>Products in this scan</span><span>&#9638;</span></div>
+            <div id="ov-products" class="metric-value">&mdash;</div>
+            <div id="ov-products-foot" class="metric-foot">every product the scan detected</div>
           </button>
-          <button class="metric-card" type="button" data-dashboard-metric="views" aria-label="Sort offers by Telegram views">
-            <div class="metric-label"><span>Telegram views captured</span><span>◉</span></div>
-            <div id="metric-offers" class="metric-value">—</div>
-
-            <div class="metric-foot">Click to compare offers with the most views</div>
+          <button class="metric-card" type="button" data-ov-goto="products" aria-label="Open identified products">
+            <div class="metric-label"><span>Identified</span><span>&#10003;</span></div>
+            <div id="ov-identified" class="metric-value">&mdash;</div>
+            <div id="ov-identified-foot" class="metric-foot">named with a confirmed product</div>
           </button>
-          <button class="metric-card" type="button" data-dashboard-metric="engagement" aria-label="Sort offers by Telegram engagement">
-            <div class="metric-label"><span>Telegram engagement</span><span>♡</span></div>
-            <div id="metric-suppliers" class="metric-value">—</div>
-
-            <div class="metric-foot">Click to compare reactions, replies, and forwards</div>
+          <button class="metric-card" type="button" data-ov-goto="products" aria-label="Open suppliers">
+            <div class="metric-label"><span>Suppliers</span><span>&#9873;</span></div>
+            <div id="ov-suppliers" class="metric-value">&mdash;</div>
+            <div id="ov-suppliers-foot" class="metric-foot">listing inside this scan</div>
           </button>
-          <button class="metric-card" type="button" data-dashboard-metric="ads" aria-label="Open product Meta ad research">
-            <div class="metric-label"><span>Active Meta ads found</span><span>f</span></div>
-            <div id="metric-researched" class="metric-value">—</div>
-
-            <div class="metric-foot">Click to inspect each ad lookup result, including errors</div>
+          <button class="metric-card" type="button" data-ov-goto="products" aria-label="Open sources">
+            <div class="metric-label"><span>Sources</span><span>&#9673;</span></div>
+            <div id="ov-sources" class="metric-value">&mdash;</div>
+            <div id="ov-sources-foot" class="metric-foot">channels in the source database</div>
+          </button>
+          <button class="metric-card" type="button" data-ov-goto="products" aria-label="Open categories">
+            <div class="metric-label"><span>Categories</span><span>&#9636;</span></div>
+            <div id="ov-categories" class="metric-value">&mdash;</div>
+            <div id="ov-categories-foot" class="metric-foot">active in this scan</div>
+          </button>
+          <button class="metric-card" type="button" data-ov-goto="products" aria-label="Open ad intelligence">
+            <div class="metric-label"><span>Ads collected</span><span>f</span></div>
+            <div id="ov-ads" class="metric-value">&mdash;</div>
+            <div id="ov-ads-foot" class="metric-foot">distinct Ad Library ads</div>
+          </button>
+          <button class="metric-card" type="button" data-ov-goto="reports" aria-label="Open scan history">
+            <div class="metric-label"><span>Scan success rate</span><span>&#8983;</span></div>
+            <div id="ov-success" class="metric-value">&mdash;</div>
+            <div id="ov-success-foot" class="metric-foot">completed scans</div>
+          </button>
+          <button class="metric-card" type="button" data-ov-goto="products" aria-label="Open products that need review">
+            <div class="metric-label"><span>Needs review</span><span>!</span></div>
+            <div id="ov-review" class="metric-value">&mdash;</div>
+            <div id="ov-review-foot" class="metric-foot">products without a confirmed name</div>
           </button>
         </section>
-
-
 
         <section class="overview-grid">
-
           <article class="panel">
-
             <div class="panel-head">
-
-              <div><h2>Highest test priorities</h2><p>Ranked from the current scan</p></div>
-
-              <a href="#products-section">View table ›</a>
-
+              <div><h2>Trending opportunities</h2><p id="ov-trending-sub">Ranked by opportunity score inside the selected scan</p></div>
+              <a href="#" data-ov-goto="products">Open product table &rsaquo;</a>
             </div>
-
-            <div id="priority-chart" class="muted">Scores appear here after scanning.</div>
-
+            <div id="ov-trending" class="muted">Loading the latest scan&hellip;</div>
           </article>
 
-          <article class="panel" id="research-section">
-
+          <article class="panel" id="ov-category-panel">
             <div class="panel-head">
-
-              <div><h2>Market intelligence</h2><p>Validate demand and competition before testing</p></div>
-
+              <div><h2>Hot products by category</h2><p>Where the strongest offers sit inside each category</p></div>
             </div>
-
-            <div class="snapshot-grid">
-
-              <div class="snapshot-item"><strong>Google Trends</strong><span>Record whether search interest is rising, stable, or falling.</span></div>
-
-              <div class="snapshot-item"><strong>Meta Ad Library</strong><span>Count visible ads and note how long active ads have run.</span></div>
-
-              <div class="snapshot-item"><strong>Social signals</strong><span>Record observed views and interactions with a source link.</span></div>
-
-              <div class="snapshot-item"><strong>Competitor prices</strong><span>Fetch public listing metadata from a product-page URL.</span></div>
-
-            </div>
-
+            <div id="ov-category-hot" class="muted">Loading&hellip;</div>
           </article>
 
+          <article class="panel" id="ov-supplier-panel">
+            <div class="panel-head">
+              <div><h2>Supplier intelligence</h2><p>Who is pushing product now, and who just appeared</p></div>
+            </div>
+            <div id="ov-suppliers-panel" class="muted">Loading&hellip;</div>
+          </article>
+
+          <article class="panel" id="ov-source-panel">
+            <div class="panel-head">
+              <div><h2>Source performance</h2><p>Which channels actually produce usable, identified products</p></div>
+            </div>
+            <div id="ov-sources-panel" class="muted">Loading&hellip;</div>
+          </article>
         </section>
 
-
+        <p class="overview-live" id="ov-live">Waiting for the first update&hellip;</p>
 
     </div>
 
@@ -1764,6 +1828,51 @@
   <p class="mp-note">Searching can take a while; progress is reported below. A running Telegram operation can be cancelled from the Operations panel.</p>
   <div id="mp-image-out" class="mp-out">Choose an image and at least one channel, then start the search.</div>
 </article>
+    </div>
+
+    <!-- ===================== PAGE: SUPPLIERS ===================== -->
+    <div class="app-page" id="page-suppliers" data-page="suppliers" hidden>
+      <section class="page-heading">
+        <div>
+          <p class="eyebrow">DIRECTORY</p>
+          <h1>Al-Eulma Supplier Directory</h1>
+          <p>Multi-page category catalog containing wholesale suppliers across all category pages.</p>
+        </div>
+      </section>
+
+      <div class="overview-grid" style="margin-top:17px;">
+        <article class="panel" style="grid-column: span 12;">
+          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; flex-wrap: wrap; gap: 10px;">
+            <h3>Suppliers Database (<span id="supplier-count">0</span>)</h3>
+            <div style="display: flex; gap: 8px; flex-wrap: wrap;">
+              <input id="supplier-search-input" type="search" placeholder="Search suppliers, category, phone, city..." style="padding: 6px 12px; border: 1px solid #d1d6e0; border-radius: 6px; width: 280px; font-size: 13px;">
+              <select id="supplier-category-filter" style="padding: 6px 12px; border: 1px solid #d1d6e0; border-radius: 6px; font-size: 13px;">
+                <option value="">All Categories / Sheets</option>
+              </select>
+              <button id="supplier-refresh-btn" type="button" class="secondary" style="padding: 6px 12px;">Refresh</button>
+            </div>
+          </div>
+          <div style="max-height: 500px; overflow: auto; border: 1px solid #e1e6ef; border-radius: 6px;">
+            <table style="width: 100%; border-collapse: collapse; font-size: 13px;">
+              <thead id="suppliers-thead">
+                <tr id="suppliers-thead-row" style="background: #f7f9fc; color: #43536a; text-align: left; position: sticky; top: 0; z-index: 1;">
+                  <th style="padding: 10px 12px; border-bottom: 1px solid #e1e6ef;">Category Sheet</th>
+                  <th style="padding: 10px 12px; border-bottom: 1px solid #e1e6ef;">Supplier Name</th>
+                  <th style="padding: 10px 12px; border-bottom: 1px solid #e1e6ef;">Phone</th>
+                  <th style="padding: 10px 12px; border-bottom: 1px solid #e1e6ef;">WhatsApp</th>
+                  <th style="padding: 10px 12px; border-bottom: 1px solid #e1e6ef;">Telegram</th>
+                  <th style="padding: 10px 12px; border-bottom: 1px solid #e1e6ef;">Facebook</th>
+                  <th style="padding: 10px 12px; border-bottom: 1px solid #e1e6ef;">Product Type</th>
+                  <th style="padding: 10px 12px; border-bottom: 1px solid #e1e6ef;">Livraison</th>
+                </tr>
+              </thead>
+              <tbody id="suppliers-tbody">
+                <tr><td colspan="6" style="padding: 20px; text-align: center; color: #666;">Loading suppliers...</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </article>
+      </div>
     </div>
 
     <!-- ===================== PAGE: REPORTS ===================== -->
@@ -4698,7 +4807,7 @@
   var loaded = {};
 
   function subPages(name) {
-    return name === "products" || name === "image" || name === "product";
+    return name === "products" || name === "image" || name === "product" || name === "suppliers";
   }
 
   function setActive(name) {
@@ -4711,27 +4820,35 @@
     if (sub) sub.hidden = !subPages(name);
     var group = document.querySelector('.side-nav .nav-group[data-group="research"]');
     if (group) group.classList.toggle("active", subPages(name));
-  }    function onPageShown(name) {
+  }
+
+  function onPageShown(name) {
     if (name === "products" && !loaded.products) {
       loaded.products = true;
-        startPolling();
-      }
-      if (name === "reports" && !loaded.reports) {
-        loaded.reports = true;
-        if (window.__loadScans) window.__loadScans();
-      }
-      if (name === "image" && !loaded.image) {
-        loaded.image = true;
-        loadChats();
-        startPolling();
-      }
+      startPolling();
     }
+    if (name === "suppliers" && !loaded.suppliers) {
+      loaded.suppliers = true;
+      if (window.__loadSuppliers) window.__loadSuppliers();
+    }
+    if (name === "reports" && !loaded.reports) {
+      loaded.reports = true;
+      if (window.__loadScans) window.__loadScans();
+    }
+    if (name === "image" && !loaded.image) {
+      loaded.image = true;
+      loadChats();
+      startPolling();
+    }
+  }
 
-    function onPageHidden(name) {
-      if (name === "products" || name === "image") {
-        stopPolling();
-      }
-    }    function currentPageName() {
+  function onPageHidden(name) {
+    if (name === "products" || name === "image") {
+      stopPolling();
+    }
+  }
+
+  function currentPageName() {
     var pages = document.querySelectorAll(".app-page");
     for (var i = 0; i < pages.length; i++) {
       if (!pages[i].hidden) return pages[i].getAttribute("data-page");
@@ -4740,13 +4857,14 @@
   }
 
   function showPage(name) {
+    var previous = currentPageName();
     var pages = document.querySelectorAll(".app-page");
     for (var i = 0; i < pages.length; i++) {
       pages[i].hidden = pages[i].getAttribute("data-page") !== name;
     }
     setActive(name);
     window.scrollTo(0, 0);
-    onPageHidden(currentPageName());
+    onPageHidden(previous);
     onPageShown(name);
   }
   window.__showPage = showPage;
@@ -6177,6 +6295,478 @@
 </script>
 
 
+<script>
+(function () {
+  "use strict";
+
+  var POLL_ACTIVE = 5000;
+  var POLL_IDLE = 20000;
+  var state = { timer: null, loading: false, failures: 0 };
+
+  function el(id) { return document.getElementById(id); }
+
+  function esc(value) {
+    return String(value == null ? "" : value).replace(/[&<>"']/g, function (ch) {
+      return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[ch];
+    });
+  }
+
+  function num(value) {
+    if (value === null || value === undefined || value === "") return "\u2014";
+    var n = Number(value);
+    if (!isFinite(n)) return "\u2014";
+    return n.toLocaleString("en-US");
+  }
+
+  function pct(value) {
+    if (value === null || value === undefined || value === "") return "\u2014";
+    var n = Number(value);
+    if (!isFinite(n)) return "\u2014";
+    return Math.round(n) + "%";
+  }
+
+  function money(value, currency) {
+    if (value === null || value === undefined || value === "") return "\u2014";
+    var n = Number(value);
+    if (!isFinite(n)) return "\u2014";
+    return (currency ? currency + " " : "") + n.toLocaleString("en-US", { maximumFractionDigits: 2 });
+  }
+
+  function setText(id, value) {
+    var node = el(id);
+    if (node) node.textContent = (value === null || value === undefined || value === "") ? "\u2014" : String(value);
+  }
+
+  function scoreClass(score) {
+    if (score === null || score === undefined) return "low";
+    return score >= 75 ? "good" : score >= 55 ? "mid" : "low";
+  }
+
+  function scorePill(score) {
+    return '<span class="ov-score ' + scoreClass(score) + '">' +
+      (score === null || score === undefined ? "\u2014" : Math.round(score)) + "</span>";
+  }
+
+  function growthText(value) {
+    if (value === null || value === undefined) return '<span class="ov-sub">new</span>';
+    var n = Number(value);
+    if (!isFinite(n)) return '<span class="ov-sub">new</span>';
+    var cls = n > 0 ? "ov-up" : n < 0 ? "ov-down" : "ov-sub";
+    return '<span class="' + cls + '">' + (n > 0 ? "+" : "") + Math.round(n) + "%</span>";
+  }
+
+  function empty(message) {
+    return '<div class="ov-empty">' + esc(message) + "</div>";
+  }
+
+  function table(headers, rows, emptyMessage) {
+    if (!rows.length) return empty(emptyMessage);
+    return '<table class="ov-table"><thead><tr>' +
+      headers.map(function (header) {
+        return '<th class="' + (header.numeric ? "ov-num" : "") + '">' + esc(header.label) + "</th>";
+      }).join("") +
+      "</tr></thead><tbody>" + rows.join("") + "</tbody></table>";
+  }
+
+  function productRow(row, columns) {
+    return '<tr data-ov-key="' + esc(row.key || "") + '">' + columns + "</tr>";
+  }
+
+  function renderMetrics(metrics, scan) {
+    var total = Number(metrics.products_total || 0);
+    setText("ov-products", num(total));
+    setText("ov-products-foot", scan && scan.scan_id
+      ? "scan " + scan.scan_id + " \u00b7 " + (scan.category || "all categories")
+      : "every product the scan detected");
+    setText("ov-identified", num(metrics.products_identified));
+    setText("ov-identified-foot", total
+      ? pct((Number(metrics.products_identified || 0) / total) * 100) + " of detected products"
+      : "named with a confirmed product");
+    setText("ov-suppliers", num(metrics.suppliers_total));
+    setText("ov-suppliers-foot", metrics.suppliers_new
+      ? metrics.suppliers_new + " new in this scan"
+      : "listing inside this scan");
+    var sources = Number(metrics.sources_total || 0);
+    var scannedChannels = Number(metrics.scan_channels || 0);
+    setText("ov-sources", num(sources || scannedChannels));
+    if (sources) {
+      setText("ov-sources-foot", num(metrics.sources_scanned) + " scanned" +
+        (metrics.source_average_score === null || metrics.source_average_score === undefined
+          ? ""
+          : " \u00b7 avg score " + metrics.source_average_score));
+    } else {
+      setText("ov-sources-foot", scannedChannels
+        ? "channels scanned in this scan"
+        : "import the sources sheet to build the source database");
+    }
+    setText("ov-categories", num(metrics.categories_active));
+    setText("ov-categories-foot", metrics.categories_total
+      ? num(metrics.categories_total) + " categories in the source database"
+      : metrics.scan_category
+        ? "categorised scan: " + metrics.scan_category
+        : "import the sources sheet to group channels");
+    setText("ov-ads", num(metrics.ads_collected));
+    setText("ov-ads-foot", metrics.ads_collected ? "distinct Ad Library ads" : "no ads collected yet");
+    setText("ov-success", metrics.scan_success_rate === null || metrics.scan_success_rate === undefined
+      ? "\u2014" : pct(metrics.scan_success_rate));
+    setText("ov-success-foot", num(metrics.scans_completed) + " of " + num(metrics.scans_total) + " scans completed");
+    setText("ov-review", num(metrics.review_needed));
+    setText("ov-review-foot", metrics.products_failed
+      ? num(metrics.products_failed) + " failed outright"
+      : "products without a confirmed name");
+  }
+
+  function renderTrending(rows) {
+    var host = el("ov-trending");
+    if (!host) return;
+    var body = (rows || []).map(function (row) {
+      return productRow(row,
+        '<td><div class="ov-name">' + esc(row.product || "Unnamed product") + "</div>" +
+        '<div class="ov-sub">' + esc(row.label || row.status_label || "") + "</div></td>" +
+        '<td class="ov-num">' + scorePill(row.opportunity) + "</td>" +
+        '<td class="ov-num">' + (row.trend_score === null || row.trend_score === undefined ? "\u2014" : Math.round(row.trend_score)) + "</td>" +
+        '<td class="ov-num">' + growthText(row.growth_rate) + "</td>" +
+        '<td class="ov-num">' + num(row.mentions) + "</td>" +
+        '<td class="ov-num">' + num(row.exact_ads) + "</td>" +
+        '<td class="ov-why">' + esc((row.why || []).slice(0, 2).join(" \u00b7 ")) + "</td>");
+    });
+    host.innerHTML = table([
+      { label: "Product" },
+      { label: "Opportunity", numeric: true },
+      { label: "Trend", numeric: true },
+      { label: "Growth", numeric: true },
+      { label: "Mentions", numeric: true },
+      { label: "Exact ads", numeric: true },
+      { label: "Why" }
+    ], body, "No products with a score in this scan yet. Run a scan or widen the date range.");
+  }
+
+  function renderHotCategories(groups) {
+    var host = el("ov-category-hot");
+    if (!host) return;
+    if (!groups || !groups.length) {
+      host.innerHTML = empty("Import sources into categories, then scan one to see its hottest products.");
+      return;
+    }
+    host.innerHTML = groups.map(function (group) {
+      var items = (group.products || []).map(function (product) {
+        return '<div class="ov-cat-item" data-ov-key="' + esc(product.key || "") + '">' +
+          "<span>" + esc(product.product || "Unnamed product") + "</span>" +
+          scorePill(product.opportunity) + "</div>";
+      }).join("");
+      return '<div class="ov-cat-group">' +
+        '<div class="ov-cat-head"><span class="ov-cat-name">' + esc(group.category || "Uncategorised") + "</span>" +
+        "<span>" + (group.products || []).length + " products</span></div>" + items + "</div>";
+    }).join("");
+  }
+
+  function renderSuppliers(suppliers) {
+    var host = el("ov-suppliers-panel");
+    if (!host) return;
+    suppliers = suppliers || {};
+    var top = suppliers.top || [];
+    var growing = suppliers.growing || [];
+    var fresh = suppliers.new || [];
+    if (!top.length && !growing.length && !fresh.length) {
+      host.innerHTML = empty("Suppliers appear once seller or channel names are captured in a scan.");
+      return;
+    }
+    var rows = top.map(function (supplier) {
+      return "<tr>" +
+        '<td><div class="ov-name">' + esc(supplier.supplier) + "</div>" +
+        '<div class="ov-sub">' + esc((supplier.channels || []).slice(0, 2).join(", ")) + "</div></td>" +
+        '<td class="ov-num">' + num(supplier.product_count) + "</td>" +
+        '<td class="ov-num">' + num(supplier.posts) + "</td>" +
+        '<td class="ov-num">' + growthText(supplier.growth_rate) + "</td>" +
+        "</tr>";
+    });
+    var extra = "";
+    if (growing.length) {
+      extra += '<div class="ov-subhead">Fastest growing</div><div class="ov-list">' +
+        growing.slice(0, 4).map(function (supplier) {
+          return '<div class="ov-list-row"><span>' + esc(supplier.supplier) + "</span>" + growthText(supplier.growth_rate) + "</div>";
+        }).join("") + "</div>";
+    }
+    if (fresh.length) {
+      extra += '<div class="ov-subhead">New this scan</div><div class="ov-list">' +
+        fresh.slice(0, 4).map(function (supplier) {
+          return '<div class="ov-list-row"><span>' + esc(supplier.supplier) + "</span><span class=\"ov-sub\">" +
+            num(supplier.product_count) + " products</span></div>";
+        }).join("") + "</div>";
+    }
+    host.innerHTML = '<table class="ov-table"><thead><tr>' +
+      "<th>Supplier</th><th class=\"ov-num\">Products</th><th class=\"ov-num\">Posts</th>" +
+      "<th class=\"ov-num\">Growth</th></tr></thead><tbody>" + rows.join("") + "</tbody></table>" + extra;
+  }
+
+  function renderSources(rows) {
+    var host = el("ov-sources-panel");
+    if (!host) return;
+    if (!rows || !rows.length) {
+      host.innerHTML = empty("Per-source performance is written when a scan finishes.");
+      return;
+    }
+    var body = rows.map(function (row) {
+      var score = row.source_score === null || row.source_score === undefined ? 0 : Number(row.source_score);
+      return "<tr>" +
+        '<td><div class="ov-name">' + esc(row.channel || row.source_key) + "</div>" +
+        '<div class="ov-sub">' + esc(row.category || "Uncategorised") + "</div></td>" +
+        '<td class="ov-num">' + num(row.products_found) + "</td>" +
+        '<td class="ov-num">' + pct(row.identification_rate) + "</td>" +
+        '<td class="ov-num">' + num(row.ads_found) + "</td>" +
+        '<td><div class="ov-bar"><span style="width:' + Math.max(2, Math.min(100, score)) + '%"></span></div></td>' +
+        '<td class="ov-num">' + scorePill(score) + "</td>" +
+        "</tr>";
+    });
+    host.innerHTML = '<table class="ov-table"><thead><tr>' +
+      "<th>Channel</th><th class=\"ov-num\">Products</th><th class=\"ov-num\">Identified</th>" +
+      "<th class=\"ov-num\">Ads</th><th>Quality</th><th class=\"ov-num\">Score</th>" +
+      "</tr></thead><tbody>" + body.join("") + "</tbody></table>";
+  }
+
+  function renderLive(overview) {
+    var live = el("ov-live");
+    if (!live) return;
+    live.classList.remove("err");
+    var scan = overview.scan || null;
+    var when = overview.generated_at ? new Date(overview.generated_at) : new Date();
+    var parts = ["Live"];
+    if (!isNaN(when.getTime())) parts.push("updated " + when.toLocaleTimeString());
+    if (scan && scan.scan_id) parts.push("scan " + scan.scan_id + " \u00b7 " + (scan.status || "unknown"));
+    if (overview.empty_state) parts.push(overview.empty_state);
+    live.textContent = parts.join(" \u00b7 ");
+  }
+
+  function render(overview) {
+    overview = overview || {};
+    renderMetrics(overview.metrics || {}, overview.scan);
+    renderTrending(overview.trending);
+    renderHotCategories(overview.hot_by_category);
+    renderSuppliers(overview.suppliers);
+    renderSources(overview.sources);
+    renderLive(overview);
+  }
+
+  function pageVisible() {
+    var page = el("page-overview");
+    return !!page && !page.hidden;
+  }
+
+  function schedule(delay) {
+    if (state.timer) clearTimeout(state.timer);
+    state.timer = setTimeout(function () {
+      state.timer = null;
+      if (pageVisible() && document.visibilityState !== "hidden") refresh();
+      else schedule(POLL_IDLE);
+    }, delay);
+  }
+
+  function refresh() {
+    if (state.loading) return;
+    state.loading = true;
+    fetch("/api/overview", { headers: { "Accept": "application/json" }, cache: "no-store" })
+      .then(function (response) {
+        if (!response.ok) throw new Error("HTTP " + response.status);
+        return response.json();
+      })
+      .then(function (data) {
+        if (data && data.error) throw new Error(data.error);
+        state.failures = 0;
+        render(data);
+        schedule(data && data.scan && data.scan.status === "running" ? POLL_ACTIVE : POLL_IDLE);
+      })
+      .catch(function (error) {
+        state.failures += 1;
+        var live = el("ov-live");
+        if (live) {
+          live.classList.add("err");
+          live.textContent = "Live update failed: " + error.message + " \u2014 retrying";
+        }
+        schedule(Math.min(POLL_IDLE, POLL_ACTIVE * Math.pow(2, Math.min(state.failures, 3))));
+      })
+      .then(function () { state.loading = false; });
+  }
+
+  function openProduct(key) {
+    if (!key) return;
+    if (typeof window.__openProductProfile === "function") {
+      window.__openProductProfile(key);
+      return;
+    }
+    if (typeof window.__showPage === "function") window.__showPage("products");
+  }
+
+  function wire() {
+    document.addEventListener("click", function (event) {
+      var target = event.target;
+      if (!target || !target.closest) return;
+
+      var gotoNode = target.closest("[data-ov-goto]");
+      if (gotoNode) {
+        event.preventDefault();
+        var page = gotoNode.getAttribute("data-ov-goto");
+        if (typeof window.__showPage === "function") window.__showPage(page);
+        return;
+      }
+
+      var keyNode = target.closest("[data-ov-key]");
+      if (keyNode && !target.closest("a, button")) {
+        openProduct(keyNode.getAttribute("data-ov-key"));
+      }
+    });
+
+    document.addEventListener("visibilitychange", function () {
+      if (document.visibilityState === "visible" && pageVisible()) refresh();
+    });
+  }
+
+  function start() {
+    wire();
+    refresh();
+  }
+
+  var allSuppliers = [];
+  var allSheets = [];
+  var GENERIC_COLUMNS = [
+    {label: "Category Sheet", key: "category_sheet"},
+    {label: "Supplier Name", key: "supplier_name"},
+    {label: "Phone", key: "phone"},
+    {label: "WhatsApp", key: "whatsapp"},
+    {label: "Telegram", key: "telegram"},
+    {label: "Facebook", key: "facebook"},
+    {label: "Product Type", key: "product_type"},
+    {label: "Livraison", key: "delivery"}
+  ];
+
+  // A selected sheet shows that sheet's own columns, in its own order. The
+  // generic view is only the common denominator across sheets.
+  function columnsFor(category) {
+    if (category) {
+      var sheet = allSheets.filter(function(s) { return s.sheet_name === category; })[0];
+      if (sheet && sheet.columns && sheet.columns.length) {
+        return sheet.columns.map(function(label) { return {label: label, raw: true}; });
+      }
+    }
+    return GENERIC_COLUMNS;
+  }
+
+  function supplierCell(s, column) {
+    if (column.raw) {
+      if (!s.__raw) {
+        try { s.__raw = s.raw_json ? JSON.parse(s.raw_json) : {}; }
+        catch (e) { s.__raw = {}; }
+      }
+      var value = s.__raw[column.label];
+      return value == null ? "" : String(value);
+    }
+    var plain = s[column.key];
+    return plain == null ? "" : String(plain);
+  }
+
+  function renderSupplierCell(value) {
+    var text = String(value == null ? "" : value).trim();
+    if (!text || text === "//") return '<span style="color:#b6bfcc;">\u2014</span>';
+    var link = /^https?:\/\//i.test(text) ? text
+      : (/^(t\.me|wa\.me)\/\S+$/i.test(text) ? "https://" + text : "");
+    if (link) return '<a href="' + esc(link) + '" target="_blank" rel="noopener">' + esc(text) + '</a>';
+    return esc(text);
+  }
+
+  function renderSuppliersHeader(columns) {
+    var row = el("suppliers-thead-row");
+    if (!row) return;
+    row.innerHTML = columns.map(function(column) {
+      return '<th style="padding:10px 12px; border-bottom:1px solid #e1e6ef; white-space:nowrap;">' + esc(column.label) + '</th>';
+    }).join("");
+  }
+
+  window.__loadSuppliers = async function() {
+    var tbody = el("suppliers-tbody");
+    var countEl = el("supplier-count");
+    var catSelect = el("supplier-category-filter");
+    try {
+      var res = await request("/api/suppliers");
+      allSuppliers = res.suppliers || [];
+      allSheets = res.sheets || [];
+      var cats = allSheets.length
+        ? allSheets.map(function(s) { return s.sheet_name; })
+        : (res.categories || []);
+      if (countEl) countEl.textContent = allSuppliers.length;
+      if (catSelect) {
+        var selected = catSelect.value;
+        catSelect.innerHTML = '<option value="">All Categories / Sheets</option>' +
+          cats.map(function(c) { return '<option value="' + esc(c) + '">' + esc(c) + '</option>'; }).join("");
+        catSelect.value = selected;
+      }
+      renderSuppliersList(allSuppliers);
+    } catch (e) {
+      if (tbody) tbody.innerHTML = '<tr><td colspan="8" style="padding:20px; text-align:center; color:#c0392b;">Failed to load suppliers: ' + esc(e.message) + '</td></tr>';
+    }
+  };
+
+  function renderSuppliersList(list) {
+    var tbody = el("suppliers-tbody");
+    var catSelect = el("supplier-category-filter");
+    var columns = columnsFor(catSelect && catSelect.value || "");
+    renderSuppliersHeader(columns);
+    if (!tbody) return;
+    if (!list || list.length === 0) {
+      tbody.innerHTML = '<tr><td colspan="' + columns.length + '" style="padding:20px; text-align:center; color:#666;">No suppliers found.</td></tr>';
+      return;
+    }
+    var html = list.map(function(s) {
+      return '<tr>' + columns.map(function(column, index) {
+        var style = index === 0
+          ? 'padding:8px 12px; border-bottom:1px solid #f0f3f8; font-weight:600; color:#087e90; white-space:nowrap;'
+          : (index === 1 ? 'padding:8px 12px; border-bottom:1px solid #f0f3f8; font-weight:600;' : 'padding:8px 12px; border-bottom:1px solid #f0f3f8;');
+        return '<td style="' + style + '">' + renderSupplierCell(supplierCell(s, column)) + '</td>';
+      }).join("") + '</tr>';
+    }).join("");
+    tbody.innerHTML = html;
+  }
+
+  function filterSuppliers() {
+    var searchInput = el("supplier-search-input");
+    var catSelect = el("supplier-category-filter");
+    var search = (searchInput && searchInput.value || "").toLowerCase();
+    var cat = catSelect && catSelect.value || "";
+    var filtered = allSuppliers.filter(function(s) {
+      if (cat && s.category_sheet !== cat) return false;
+      if (!search) return true;
+      return (s.supplier_name && s.supplier_name.toLowerCase().includes(search)) ||
+        (s.category && s.category.toLowerCase().includes(search)) ||
+        (s.phone && s.phone.toLowerCase().includes(search)) ||
+        (s.city && s.city.toLowerCase().includes(search)) ||
+        (s.notes && s.notes.toLowerCase().includes(search)) ||
+        (s.product_type && s.product_type.toLowerCase().includes(search)) ||
+        (s.whatsapp && s.whatsapp.toLowerCase().includes(search)) ||
+        (s.telegram && s.telegram.toLowerCase().includes(search)) ||
+        (s.facebook && s.facebook.toLowerCase().includes(search)) ||
+        (s.raw_json && s.raw_json.toLowerCase().includes(search)) ||
+        (s.category_sheet && s.category_sheet.toLowerCase().includes(search));
+    });
+    renderSuppliersList(filtered);
+    if (el("supplier-count")) el("supplier-count").textContent = filtered.length;
+  }
+
+  document.addEventListener("DOMContentLoaded", function() {
+    var sInput = el("supplier-search-input");
+    var cSelect = el("supplier-category-filter");
+    var rBtn = el("supplier-refresh-btn");
+    if (sInput) sInput.addEventListener("input", filterSuppliers);
+    if (cSelect) cSelect.addEventListener("change", filterSuppliers);
+    if (rBtn) rBtn.addEventListener("click", function() { window.__loadSuppliers(); });
+  });
+
+  window.__refreshOverview = refresh;
+
+  if (document.readyState === "loading") {
+    document.addEventListener("DOMContentLoaded", start);
+  } else {
+    start();
+  }
+})();
+</script>
 </body>
 
 </html>
