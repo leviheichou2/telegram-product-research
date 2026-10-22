@@ -2403,6 +2403,10 @@ def _looks_like_concrete_product(name):
         flags=re.I,
     ):
         return False
+    # Leftovers of a broken read: sub-word fragments, bare punctuation and
+    # emoji debris are not a product name either.
+    if "##" in name or not re.match(r"[\w\u0600-\u06ff]", name):
+        return False
     words = re.findall(r"[^\W_]+", name, flags=re.UNICODE)
     content_words = [
         w for w in words if len(w) >= 3 and not w.isdigit() and w.casefold() not in _WEB_NOISE_WORDS
@@ -3565,6 +3569,27 @@ async def run_scan(chat_ids, start_date, end_date, category="", source_keys=None
             signatures = offer_parser.signature_lines(
                 [message.message or "" for message in chat_messages]
             )
+            # An album of photos shares one caption: Telegram puts the text on
+            # the first photo and leaves the rest empty. Without this, every
+            # other photo of a named offer became an unnamed one.
+            parsed_offers = {}
+            group_offers = {}
+            for message in chat_messages:
+                text = message.message or ""
+                if not text:
+                    continue
+                parsed_offers[message.id] = offer_parser.parse_offer(
+                    text,
+                    channel_title=entity.title,
+                    signature=signatures,
+                )
+            for message in chat_messages:
+                grouped_id = getattr(message, "grouped_id", None)
+                if not grouped_id:
+                    continue
+                offer = parsed_offers.get(message.id)
+                if offer is not None and offer.named:
+                    group_offers.setdefault(grouped_id, offer)
             for message in chat_messages:
                 if _scan_cancel.is_set():
                     was_cancelled = True
@@ -3572,15 +3597,12 @@ async def run_scan(chat_ids, start_date, end_date, category="", source_keys=None
                 scanned += 1
                 text = message.message or ""
                 details = parse_trade_details(text)
-                offer = (
-                    offer_parser.parse_offer(
-                        text,
-                        channel_title=entity.title,
-                        signature=signatures,
-                    )
-                    if text
-                    else offer_parser.Offer()
-                )
+                offer = parsed_offers.get(message.id) or offer_parser.Offer()
+                if not offer.named:
+                    grouped_id = getattr(message, "grouped_id", None)
+                    album_offer = group_offers.get(grouped_id) if grouped_id else None
+                    if album_offer is not None:
+                        offer = album_offer
                 attributes = {}
                 product_names = [offer.name] if offer.named else []
                 if (
@@ -4173,11 +4195,43 @@ def meta_query_for_product(product):
             if candidate:
                 brand = candidate
                 break
-    words = [word for word in name.split() if word]
+    words = [word for word in normalize_arabic(name).split() if word not in _QUERY_FILLER]
     core = " ".join(words[:META_QUERY_MAX_WORDS])
     if brand and brand.casefold() not in core.casefold():
         core = f"{brand} {core}".strip()
     return (core or name)[:200]
+
+
+# Words that only connect the product to the offer; they take up keyword slots
+# in the Ad Library search without describing anything.
+_QUERY_FILLER = frozenset(
+    "من في على الى إلى عن مع او أو و شركه شركة مؤسسة رقم موديل نوع اللون الحجم "
+    "قياس مقاس سعر جملة توصيل متوفر جديد للبيع بيع".split()
+)
+
+
+def meta_query_widening(query):
+    """The same search, progressively widened, until the library answers.
+
+    The Ad Library matches every keyword, so a five-word Arabic name matches
+    almost nothing. Each step drops words; the returned ads are still verified
+    against the full name by ``score_meta_ad``, so widening costs no precision.
+    """
+    attempts = []
+    for candidate in (
+        query,
+        " ".join(query.split()[:3]),
+        " ".join(query.split()[:2]),
+        max(
+            (word for word in query.split() if len(word) >= 4),
+            key=len,
+            default="",
+        ),
+    ):
+        candidate = candidate.strip()
+        if candidate and candidate not in attempts:
+            attempts.append(candidate)
+    return attempts
 
 
 # A keyword search that is too long matches nothing; everything after these
@@ -4212,10 +4266,8 @@ def fetch_meta_ads(product_name, max_results=None, product=None):
     # first one comes back empty. The returned ads are still verified against
     # the full name, so a wider query cannot put the wrong product in the
     # exact section.
-    queries = [query]
-    shorter = " ".join(query.split()[:3])
-    if shorter and shorter != query:
-        queries.append(shorter)
+    queries = meta_query_widening(query)
+    seen_ads = set()
     try:
         for attempt in queries:
             for ad in collector.search(
@@ -4225,12 +4277,13 @@ def fetch_meta_ads(product_name, max_results=None, product=None):
                 max_results=max_results,
             ):
                 row = meta_ad_to_row(ad)
-                if not row["ad_id"]:
+                if not row["ad_id"] or row["ad_id"] in seen_ads:
                     continue
+                seen_ads.add(row["ad_id"])
                 rows.append(row)
                 if max_results and len(rows) >= max_results:
                     break
-            if rows:
+            if max_results and len(rows) >= max_results:
                 break
     except MetaAdsError as error:
         raise RuntimeError(f"Meta Ad Library lookup failed: {error}") from error
@@ -4900,6 +4953,23 @@ def auto_identify_product(scan_id, product_key):
                 ),
                 "name": match["name"],
                 "score": match["score"],
+            }
+        except (LookupError, ValueError):
+            pass
+    visual = visual_name_candidate(scan_id, product_key)
+    if visual:
+        try:
+            return {
+                "saved": True,
+                "key": identify_product(
+                    scan_id,
+                    product_key,
+                    visual["name"],
+                    method="image-visual",
+                    confidence=visual["score"],
+                ),
+                "name": visual["name"],
+                "score": visual["score"],
             }
         except (LookupError, ValueError):
             pass
@@ -6373,13 +6443,44 @@ _PRODUCT_VARIANT_WORDS = frozenset(
 )
 
 
+# Arabic ad copy and Arabic product names rarely use the same spelling: the
+# diacritics are optional, alef/ya/ta-marbuta have several forms, and the
+# definite article is glued to the word (الاعتكاف / اعتكاف). Tokens were also
+# read with `[a-z0-9]+`, which dropped Arabic entirely, so an Arabic product
+# name had no tokens at all and could never match an ad. Both sides now go
+# through the same normalization.
+_ARABIC_MARKS = re.compile(r"[\u064b-\u065f\u0670\u0640\u06d6-\u06ed]")
+_ARABIC_LETTER_FORMS = str.maketrans(
+    {"أ": "ا", "إ": "ا", "آ": "ا", "ٱ": "ا", "ى": "ي", "ئ": "ي", "ؤ": "و", "ة": "ه"}
+)
+_ARABIC_AD_STOPWORDS = frozenset(
+    word.casefold()
+    for word in (
+        "من في على الى عن مع او ثم يا هذا هذه ذلك تلك التي الذي الذين هو هي "
+        "شركه شركة مؤسسة رقم موديل نوع اللون الحجم قياس مقاس سعر جديد جملة "
+        "توصيل متوفر متوفره للبيع بيع الوان لون كمية قطعة"
+    ).split()
+)
+
+
+def normalize_arabic(text):
+    """Fold the optional Arabic spellings onto one form for comparison."""
+    text = _ARABIC_MARKS.sub("", str(text or ""))
+    return text.translate(_ARABIC_LETTER_FORMS)
+
+
 def _tokenize(text):
-    """Lower-cased, punctuation-free tokens worth matching on."""
+    """Lower-cased, punctuation-free tokens worth matching on (Latin + Arabic)."""
     tokens = []
-    for raw in re.findall(r"[a-z0-9]+", str(text or "").casefold()):
-        if len(raw) < 2 or raw in _AD_MATCH_STOPWORDS:
+    for raw in re.findall(r"[a-z0-9\u0621-\u064a]+", normalize_arabic(text).casefold()):
+        token = raw
+        if token.startswith("ال") and len(token) > 4:
+            token = token[2:]
+        if len(token) < 2:
             continue
-        tokens.append(raw)
+        if token in _AD_MATCH_STOPWORDS or token in _ARABIC_AD_STOPWORDS:
+            continue
+        tokens.append(token)
     return tokens
 
 
@@ -7761,6 +7862,122 @@ def image_match_candidate(scan_id, product_key):
     }
 
 
+# A different photo of the same product (another angle, another crop) scores
+# below an identical repost but clearly above an unrelated product in the same
+# category, which the calibrated visual gate in this file puts at 0.90.
+VISUAL_NAME_MINIMUM_SCORE = 0.92
+VISUAL_NAME_MARGIN = 0.02
+VISUAL_NAME_LIBRARY_LIMIT = 1500
+
+
+def _photo_vectors(paths, compute=True):
+    """Cached CLIP vectors for photo files, computing the missing ones.
+
+    ``compute=False`` only reports the photos that are already embedded. The
+    named photo library is large, so its vectors are left to the background
+    indexer: a single identification must never sit through encoding hundreds
+    of pictures.
+    """
+    vectors = {}
+    missing = []
+    names = [Path(path).name for path in paths]
+    with closing(connect_database()) as connection:
+        for name in names:
+            row = connection.execute(
+                "SELECT embedding FROM photo_embeddings WHERE image_name = ? AND model_version = ?",
+                (name, PHOTO_EMBEDDING_VERSION),
+            ).fetchone()
+            if row is not None:
+                vectors[name] = unpack_embedding(row[0])
+            else:
+                missing.append(name)
+    if missing and compute:
+        paths_by_name = {Path(path).name: path for path in paths}
+        todo = [paths_by_name[name] for name in missing]
+        computed = encode_photo_embeddings(todo)
+        store_photo_embeddings(todo, computed)
+        for name, vector in zip(missing, computed):
+            if vector is not None:
+                vectors[name] = array("f", vector)
+    return vectors
+
+
+def visual_name_candidate(scan_id, product_key):
+    """Name an unnamed photo offer from the visually nearest named photo.
+
+    Suppliers resell the same Chinese product photos, so a photo-only post is
+    usually the same picture as an offer some channel already named. CLIP
+    embeddings rank those stored photos; the name is only taken when the winner
+    clears the calibrated same-product gate *and* clearly beats the runner-up,
+    so a same-category lookalike cannot name the offer.
+    """
+    try:
+        photos = product_photo_candidates(scan_id, product_key)[:2]
+    except (sqlite3.Error, OSError):
+        return None
+    if not photos:
+        return None
+    with closing(connect_database()) as connection:
+        connection.row_factory = sqlite3.Row
+        known = connection.execute(
+            """SELECT product, normalized_product, image_name FROM messages
+               WHERE review_candidate = 0
+                 AND COALESCE(image_name, '') != ''
+                 AND normalized_product != ?
+               GROUP BY normalized_product, image_name""",
+            (product_key,),
+        ).fetchall()
+    if not known:
+        return None
+    try:
+        mine = [
+            vector
+            for vector in _photo_vectors(photos).values()
+            if vector is not None and len(vector)
+        ]
+        candidates = [
+            Path(str(row["image_name"]))
+            for row in known
+            if (IMAGE_DIR / Path(str(row["image_name"])).name).is_file()
+        ]
+        candidate_vectors = _photo_vectors(candidates[:VISUAL_NAME_LIBRARY_LIMIT], compute=False)
+    except (OSError, ValueError, RuntimeError) as error:
+        log_line(f"Visual product naming is unavailable: {error}")
+        return None
+    if not mine:
+        return None
+    scores = {}
+    for row in known:
+        vector = candidate_vectors.get(Path(str(row["image_name"])).name)
+        if vector is None or not len(vector):
+            continue
+        best = max(
+            float(sum(a * b for a, b in zip(query, vector)))
+            for query in mine
+        )
+        key = str(row["normalized_product"])
+        entry = scores.get(key)
+        if entry is None or best > entry[0]:
+            scores[key] = (best, str(row["product"] or ""))
+    if not scores:
+        return None
+    ranked = sorted(scores.items(), key=lambda item: item[1][0], reverse=True)
+    best_key, (best_score, best_name) = ranked[0]
+    runner_up = ranked[1][1][0] if len(ranked) > 1 else 0.0
+    if best_score < VISUAL_NAME_MINIMUM_SCORE:
+        return None
+    if best_score - runner_up < VISUAL_NAME_MARGIN:
+        return None
+    if not best_name or not _looks_like_concrete_product(best_name):
+        return None
+    return {
+        "name": best_name,
+        "score": round(min(0.95, best_score), 3),
+        "similarity": round(best_score, 3),
+        "runner_up": round(runner_up, 3),
+    }
+
+
 def identify_product_progressive(scan_id, product_key):
     """Identify one product with both readers and cross-check their answers.
 
@@ -7803,6 +8020,30 @@ def identify_product_progressive(scan_id, product_key):
                 "note": (
                     "Named from an identical supplier photo that is already "
                     "stored with this product name."
+                ),
+            }
+
+    visual = visual_name_candidate(scan_id, product_key)
+    if visual:
+        try:
+            new_key = identify_product(
+                scan_id,
+                product_key,
+                visual["name"],
+                method="image-visual",
+                confidence=visual["score"],
+            )
+        except (LookupError, ValueError):
+            visual = None
+        else:
+            return {
+                "saved": True,
+                "key": new_key,
+                "name": visual["name"],
+                "score": visual["score"],
+                "note": (
+                    "Named from the visually nearest supplier photo "
+                    f"({visual['similarity']:.2f} match)."
                 ),
             }
 
@@ -8404,8 +8645,13 @@ def load_results():
                 "opportunity": opportunity,
                 "attributes": group["attributes"],
                 "candidate_only": group["candidate_only"],
+                # Every one of these methods names the offer from its picture:
+                # the photo reader, an identical stored photo, or the visually
+                # nearest stored photo.
                 "identified_from_photo": bool(
-                    identification and identification["method"] == "photo"
+                    identification
+                    and identification["method"]
+                    in ("photo", "image-match", "image-visual")
                 ),
                 "identification_method": identification["method"] if identification else None,
                 "identification_confidence": (

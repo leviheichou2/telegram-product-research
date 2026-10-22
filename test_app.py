@@ -1050,8 +1050,16 @@ class AutomaticPhotoIdentificationTests(unittest.TestCase):
             app._photo_identify_state.update(running=False, scan_id="test-scan", checked=0, total=0,
                 identified=0, unreadable=0, message="",
             )
-        # These classes exist to test the photo model; the web step is disabled
-        # so no live search runs inside the suite.
+        # These classes exist to test the photo model. The duplicate-photo and
+        # visual-nearest layers run before it in the app and have their own
+        # tests, so they are switched off here to keep this class on the reader.
+        for layer in (
+            patch.object(app, "image_match_candidate", return_value=None),
+            patch.object(app, "visual_name_candidate", return_value=None),
+        ):
+            layer.start()
+            self.addCleanup(layer.stop)
+        # The web step is disabled so no live search runs inside the suite.
         self.web_patcher = patch.object(
             app,
             "identify_product_from_web",
@@ -3570,7 +3578,263 @@ class ImageMatchNamingTests(unittest.TestCase):
         self.assertIsNone(app.image_match_candidate("new", "review offer -1 2"))
 
 
+class AlbumCaptionTests(unittest.IsolatedAsyncioTestCase):
+    """A photo album carries one caption; every photo in it belongs to it."""
+
+    async def test_photos_of_a_named_album_are_named_too(self):
+        from datetime import date, datetime, timezone
+        from types import SimpleNamespace
+
+        temp_dir = tempfile.TemporaryDirectory(ignore_cleanup_errors=True)
+        originals = (app.DB_PATH, app.IMAGE_DIR, app._current_scan_id, app._chat_entities)
+        app.DB_PATH = Path(temp_dir.name) / "research.sqlite3"
+        app.IMAGE_DIR = Path(temp_dir.name) / "images"
+        app.IMAGE_DIR.mkdir(parents=True, exist_ok=True)
+        app._current_scan_id = None
+        app._chat_entities = {-1001234567890: SimpleNamespace(title="Wholesale Chat")}
+        app.initialize_database()
+
+        def restore():
+            app.DB_PATH, app.IMAGE_DIR = originals[0], originals[1]
+            app._current_scan_id, app._chat_entities = originals[2], originals[3]
+            temp_dir.cleanup()
+
+        self.addCleanup(restore)
+
+        async def sender():
+            return SimpleNamespace(title="Supplier One", username=None, first_name=None)
+
+        async def download(file=None, **kwargs):
+            Image.new("RGB", (16, 16), "white").save(file)
+
+        messages = [
+            SimpleNamespace(
+                id=1,
+                date=datetime(2026, 10, 2, 12, 0, tzinfo=timezone.utc),
+                message="⭐ منتج tapis de bain antidérapant\nالسعر: 630 دج",
+                views=10,
+                grouped_id=777,
+                get_sender=sender,
+                download_media=download,
+            ),
+            SimpleNamespace(
+                id=2,
+                date=datetime(2026, 10, 2, 12, 0, tzinfo=timezone.utc),
+                message="",
+                views=10,
+                grouped_id=777,
+                get_sender=sender,
+                download_media=download,
+            ),
+        ]
+
+        async def all_messages(iterator, cancel_event):
+            for message in messages:
+                yield message
+
+        async def no_entities(text):
+            return [], {}
+
+        async def extractor():
+            return object()
+
+        async def client():
+            return SimpleNamespace(iter_messages=lambda *args, **kwargs: [])
+
+        with patch.object(app, "cancellable_telegram_messages", all_messages), patch.object(
+            app, "extract_entities", no_entities
+        ), patch.object(app, "get_product_extractor", extractor), patch.object(
+            app, "require_authorized_client", client
+        ), patch.object(app, "has_product_image", return_value=True), patch.object(
+            app, "telegram_image_extension", return_value=".jpg"
+        ), patch.object(app, "start_meta_ads_sync"), patch.object(
+            app, "start_photo_identification", return_value=False
+        ), patch.object(app, "start_web_research", return_value=False):
+            await app.run_scan(
+                [-1001234567890], date(2026, 10, 1), date(2026, 10, 3)
+            )
+
+        with closing(sqlite3.connect(app.DB_PATH)) as connection:
+            rows = connection.execute(
+                "SELECT message_id, product, normalized_product, review_candidate "
+                "FROM messages ORDER BY message_id"
+            ).fetchall()
+        self.assertEqual(len(rows), 2)
+        self.assertEqual(
+            [(row[1], row[2], row[3]) for row in rows],
+            [
+                ("tapis de bain antidérapant", "tapis de bain antidérapant", 0),
+                ("tapis de bain antidérapant", "tapis de bain antidérapant", 0),
+            ],
+        )
+
+
+class ArabicAdMatchingTests(unittest.TestCase):
+    """Arabic products must be able to match Arabic ad copy."""
+
+    def test_arabic_words_are_tokenized_and_folded(self):
+        tokens = app._tokenize("قميص الاعتكاف")
+
+        self.assertEqual(tokens, ["قميص", "اعتكاف"])
+        # Every optional spelling of the same word folds onto one token.
+        self.assertEqual(app._tokenize("إعتكاف"), app._tokenize("اعتكاف"))
+        self.assertEqual(app._tokenize("طاقية"), app._tokenize("طاقيه"))
+
+    def test_an_arabic_ad_names_the_arabic_product(self):
+        profile = app.product_match_profile("قميص الاعتكاف")
+        ad = {
+            "creative_title": "قميص اعتكاف فاخر",
+            "creative_text": "جديد قميص الإعتكاف بجودة عالية",
+            "page_name": "متجر",
+            "link_url": "https://example.com/p/1",
+            "link_caption": "example.com",
+            "snapshot_url": "",
+        }
+
+        match = app.score_meta_ad(profile, ad)
+
+        self.assertEqual(match["level"], "exact")
+        self.assertIn("Names this exact product", " ".join(match["reasons"]))
+
+    def test_an_unrelated_arabic_ad_is_not_exact(self):
+        profile = app.product_match_profile("قميص الاعتكاف")
+        ad = {
+            "creative_title": "حذاء رياضي",
+            "creative_text": "احذية رجالية جديدة",
+            "page_name": "متجر",
+            "link_url": "https://example.com/p/2",
+            "link_caption": "example.com",
+            "snapshot_url": "",
+        }
+
+        self.assertEqual(app.score_meta_ad(profile, ad)["level"], "similar")
+
+
+class VisualNamingTests(unittest.TestCase):
+    """A photo-only offer is named from the visually nearest named photo."""
+
+    def setUp(self):
+        self.temp_dir = tempfile.TemporaryDirectory(ignore_cleanup_errors=True)
+        self.addCleanup(self.temp_dir.cleanup)
+        self.original = (app.DB_PATH, app.IMAGE_DIR, app._current_scan_id)
+        app.DB_PATH = Path(self.temp_dir.name) / "research.sqlite3"
+        app.IMAGE_DIR = Path(self.temp_dir.name) / "images"
+        app.IMAGE_DIR.mkdir(parents=True, exist_ok=True)
+        app._current_scan_id = "s2"
+
+        def restore():
+            app.DB_PATH, app.IMAGE_DIR, app._current_scan_id = self.original
+
+        self.addCleanup(restore)
+        app.initialize_database()
+        with closing(sqlite3.connect(app.DB_PATH)) as connection:
+            connection.execute(
+                """INSERT INTO scans (
+                    scan_id, start_date, end_date, market, completed_at, status,
+                    extractor_version
+                ) VALUES ('s2', '2026-10-01', '2026-10-03', 'Algeria',
+                          '2026-10-03T12:00:00+00:00', 'completed', 3)"""
+            )
+            connection.commit()
+        Image.new("RGB", (16, 16), "white").save(app.IMAGE_DIR / "query.jpg")
+        for name in ("known-a.jpg", "known-b.jpg"):
+            Image.new("RGB", (16, 16), "grey").save(app.IMAGE_DIR / name)
+        with closing(sqlite3.connect(app.DB_PATH)) as connection:
+            connection.executemany(
+                """
+                INSERT INTO messages (
+                    scan_id, chat_id, message_id, product, normalized_product,
+                    supplier, chat_title, message_date, message_text, image_name,
+                    review_candidate
+                ) VALUES (?, -1, ?, ?, ?, 'S', 'C', '2026-10-01T00:00:00+00:00', '', ?, ?)
+                """,
+                [
+                    ("s2", 1, "Unnamed offer", "review offer -1 1", "query.jpg", 1),
+                    ("s1", 2, "Wireless Earbuds", "wireless earbuds", "known-a.jpg", 0),
+                    ("s1", 3, "Steel Bottle", "steel bottle", "known-b.jpg", 0),
+                ],
+            )
+            connection.commit()
+
+    def _vectors(self, mapping):
+        from array import array
+
+        def fake(paths, compute=True):
+            return {
+                Path(path).name: array("f", mapping[Path(path).name])
+                for path in paths
+                if Path(path).name in mapping
+            }
+
+        return fake
+
+    def test_a_close_visual_match_names_the_offer(self):
+        vectors = self._vectors(
+            {"query.jpg": [1.0, 0.0], "known-a.jpg": [0.99, 0.14], "known-b.jpg": [0.2, 0.98]}
+        )
+        with patch.object(app, "_photo_vectors", side_effect=vectors):
+            match = app.visual_name_candidate("s2", "review offer -1 1")
+
+        self.assertIsNotNone(match)
+        self.assertEqual(match["name"], "Wireless Earbuds")
+
+    def test_a_same_category_lookalike_is_refused(self):
+        vectors = self._vectors(
+            {
+                "query.jpg": [1.0, 0.0],
+                "known-a.jpg": [0.80, 0.60],
+                "known-b.jpg": [0.85, 0.53],
+            }
+        )
+        with patch.object(app, "_photo_vectors", side_effect=vectors):
+            self.assertIsNone(app.visual_name_candidate("s2", "review offer -1 1"))
+
+    def test_two_equally_close_products_name_nothing(self):
+        vectors = self._vectors(
+            {"query.jpg": [1.0, 0.0], "known-a.jpg": [0.99, 0.10], "known-b.jpg": [0.99, 0.11]}
+        )
+        with patch.object(app, "_photo_vectors", side_effect=vectors):
+            self.assertIsNone(app.visual_name_candidate("s2", "review offer -1 1"))
+
+    def test_the_identification_saves_the_visual_name(self):
+        vectors = self._vectors(
+            {"query.jpg": [1.0, 0.0], "known-a.jpg": [0.99, 0.14], "known-b.jpg": [0.2, 0.98]}
+        )
+        with patch.object(app, "_photo_vectors", side_effect=vectors), patch.object(
+            app, "identify_product_from_web", side_effect=ValueError("disabled")
+        ):
+            result = app.identify_product_progressive("s2", "review offer -1 1")
+
+        self.assertTrue(result["saved"])
+        self.assertEqual(result["key"], "wireless earbuds")
+        product = app.load_results()[0]
+        self.assertFalse(product["candidate_only"])
+        self.assertTrue(product["identified_from_photo"])
+
+
 class MetaQueryTests(unittest.TestCase):
+    def test_widening_keeps_narrowing_the_query(self):
+        attempts = app.meta_query_widening("عطر هيرش لهب")
+
+        self.assertEqual(attempts[0], "عطر هيرش لهب")
+        self.assertEqual(attempts[1], "عطر هيرش")
+        self.assertEqual(attempts[2], "هيرش")
+        # A repeated step is dropped instead of being searched twice.
+        self.assertEqual(len(attempts), len(set(attempts)))
+
+    def test_a_single_word_query_is_not_searched_four_times(self):
+        self.assertEqual(app.meta_query_widening("parka"), ["parka"])
+
+    def test_filler_words_are_dropped_from_the_query(self):
+        query = app.meta_query_for_product(
+            {"product": "متوفر عطر attacks من شركة assaf"}
+        )
+
+        self.assertNotIn("من", query.split())
+        self.assertNotIn("شركة", query.split())
+        self.assertIn("attacks", query)
+
+
     def test_query_is_short_and_starts_with_the_brand(self):
         query = app.meta_query_for_product(
             {

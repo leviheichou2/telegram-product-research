@@ -386,3 +386,45 @@ category read 324 posts from three channels that are not in the account and
 named 58 products; the "parka" product then returned 36 active Algeria Meta ads
 (22 exact, 14 similar) with advertisers, creatives, landing pages and start
 dates.
+
+### Closing the photo-only and Arabic-ad gaps
+
+Three further layers were added on top of the phase-3 naming work, because
+photo-only posts and Arabic product names were the two remaining holes.
+
+**Album captions (exact, no model).** Telegram puts one caption on an album and
+leaves the other photos empty. `run_scan` now collects a channel's posts for the
+window once, reads the caption of every album (`grouped_id`) and gives that name
+to every photo in the same album, so an offer posted as five photos is one
+product instead of five unnamed ones.
+
+**Visual product retrieval (CLIP).** When a photo offer has no caption and no
+identical twin, `visual_name_candidate` compares its photo with the CLIP
+embeddings of the photos that are already named (the cached `photo_embeddings`
+library, 244 named photos on this install) and takes the nearest name only when
+it clears the calibrated same-product gate (0.92) *and* beats the runner-up by
+0.02. Verified against real stored photos: a resized, re-compressed copy of a
+named supplier photo matched at 0.93 and named the offer. The candidate library
+is only read from the cache — a single identification never sits through
+encoding hundreds of pictures, and the background indexer keeps filling it.
+
+**Arabic ad matching.** `_tokenize` read tokens with `[a-z0-9]+`, which dropped
+Arabic entirely: an Arabic product name had no tokens, so it could never be an
+exact ad match. Tokens now keep Arabic and both sides fold the optional
+spellings onto one form (diacritics removed, أ/إ/آ → ا, ة → ه, ى → ي, the
+definite article `ال` stripped), and Arabic filler words (من شركة رقم موديل …)
+are dropped from the search query. Query widening goes further and searches the
+name, then three words, then two, then the single strongest word, merging the
+ads of every step — the scorer, not the query, decides exact vs similar.
+
+Measured: `قميص الاعتكاف مخطط علبة` went from **0 ads** to 3 ads with **1 exact**
+(a Qasr Alshiaka ad that names قميص الاعتكاف in Arabic). On the re-scan of the
+`vetements pour homme` supplier category the same products are named again and
+the album posts group into one product instead of several unnamed offers.
+
+Still impossible without a vision model: a channel whose every post is a photo
+with no caption, no album sibling and no named twin anywhere (the sport channel
+is such a channel). Naming those needs an image-reading model; the local TrOCR
+weights on disk cannot be loaded under transformers 5 (`XLMRobertaTokenizer` is
+routed through the tiktoken converter and fails on `sentencepiece.bpe.model`),
+so that path is not wired in.
