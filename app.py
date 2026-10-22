@@ -27,6 +27,7 @@ import zipfile
 from xml.etree import ElementTree
 from concurrent.futures import Future, ThreadPoolExecutor
 from datetime import date, datetime, timedelta, timezone
+from functools import lru_cache
 from html.parser import HTMLParser
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
@@ -69,6 +70,11 @@ except ImportError:  # pragma: no cover - exercised only without the package
         """Stand-in used when meta-ads-collector is not installed."""
 from PIL import Image, ImageOps, UnidentifiedImageError
 
+import product_vision
+import supplier_bridge
+import offer_parser
+import vision_api
+
 
 ROOT = Path(__file__).resolve().parent
 DATA_DIR = ROOT / "data"
@@ -89,6 +95,52 @@ LABEL_DEFAULT = "PRODUCT"
 
 DATA_DIR.mkdir(exist_ok=True)
 IMAGE_DIR.mkdir(exist_ok=True)
+
+
+def use_utf8_console():
+    """Let the console carry the Arabic and emoji the channels use.
+
+    A Windows console defaults to a code page that cannot encode them, and a
+    print that fails would take the running job down with it, so the streams
+    are switched to UTF-8 with replacement characters as a safety net.
+    """
+    for stream in (sys.stdout, sys.stderr):
+        try:
+            stream.reconfigure(encoding="utf-8", errors="replace")
+        except (AttributeError, ValueError, OSError):
+            pass
+
+
+def log_line(text):
+    """Write one line to the console without ever raising.
+
+    Channel titles and product names carry Arabic text and emoji. The console
+    must never be the reason a scan dies, so a line that cannot be encoded is
+    written with its non-ASCII characters escaped.
+    """
+    try:
+        print(text, flush=True)
+    except Exception:
+        try:
+            print(ascii(str(text)), flush=True)
+        except Exception:
+            pass
+
+
+use_utf8_console()
+
+
+def connect_database(database=None, timeout=30.0):
+    """Open the local database, willing to wait for the write lock.
+
+    The scan, the photo identification and the Ad Library lookup all write to
+    the same file, so a writer waits for the others to finish instead of
+    giving up after the default five seconds and dropping the work.
+    """
+    connection = sqlite3.connect(database or DB_PATH, timeout=timeout)
+    connection.execute(f"PRAGMA busy_timeout = {int(timeout * 1000)}")
+    return connection
+
 
 PRICE_RE = re.compile(
     r"(?:(?P<currency1>US\$|USD|DZD|DA|د\.ج|دج|CNY|RMB|EUR|GBP|CAD|AUD|[$€£¥])\s*"
@@ -324,14 +376,14 @@ def initialize_suppliers_database():
             ]
             total = replace_with(conn, datasets)
         except Exception as error:
-            print(f"Failed to initialize suppliers database: {error}", flush=True)
+            log_line(f"Failed to initialize suppliers database: {error}")
             return
-        print(f"Imported {total} suppliers from {excel_path.name}", flush=True)
+        log_line(f"Imported {total} suppliers from {excel_path.name}")
 
 
 def initialize_database():
     global _current_scan_id, _current_market, _latest_scan_info
-    with closing(sqlite3.connect(DB_PATH)) as connection:
+    with closing(connect_database()) as connection:
         connection.execute(
             """
             CREATE TABLE IF NOT EXISTS messages (
@@ -646,6 +698,11 @@ def initialize_database():
             connection.execute(
                 "ALTER TABLE meta_ads ADD COLUMN link_caption TEXT NOT NULL DEFAULT ''"
             )
+        # Visual verification of the creative itself (DINOv2 cosine against the
+        # product photos). NULL means "not checked yet", which is different from
+        # a checked-and-failed 0.0, so an unchecked ad is never demoted.
+        if "visual_score" not in meta_ad_columns:
+            connection.execute("ALTER TABLE meta_ads ADD COLUMN visual_score REAL")
         # Fields the meta-ads-collector scraper supplies that the old Ad
         # Library API could not. Added one at a time so an existing database
         # upgrades in place instead of needing to be rebuilt.
@@ -1079,10 +1136,19 @@ def import_sources_from_workbook(path, replace_categories=False):
     sources, warnings = spreadsheet_sources(path)
     if not sources:
         raise ValueError("No channel rows were found in that file.")
+    return store_sources(sources, warnings, Path(path).name, len(sources))
+
+
+def store_sources(sources, warnings, file_name, rows_read):
+    """Write parsed source rows into the internal source database.
+
+    Shared by the workbook import and the supplier-guide import, so both use the
+    same identity rule and the same update-instead-of-duplicate behaviour.
+    """
     imported_at = datetime.now(timezone.utc).isoformat()
     added = updated = 0
     categories = []
-    with closing(sqlite3.connect(DB_PATH)) as connection:
+    with closing(connect_database()) as connection:
         connection.row_factory = sqlite3.Row
         existing_categories = {
             row["name"].casefold(): row["category_id"]
@@ -1164,13 +1230,13 @@ def import_sources_from_workbook(path, replace_categories=False):
             ) VALUES (?, ?, ?, ?, ?, ?, ?)
             """,
             (
-                Path(path).name, imported_at, len(categories), added, updated,
-                len(sources), json.dumps(warnings),
+                file_name, imported_at, len(categories), added, updated,
+                rows_read, json.dumps(warnings),
             ),
         )
         connection.commit()
     return {
-        "file": str(path),
+        "file": file_name,
         "import_id": cursor.lastrowid,
         "rows_read": len(sources),
         "sources_added": added,
@@ -1179,6 +1245,129 @@ def import_sources_from_workbook(path, replace_categories=False):
         "categories": categories,
         "warnings": warnings,
     }
+
+
+# ---- supplier guide -> scannable sources ----------------------------------
+# The supplier guide (the El Eulma directory) is a separate database seeded from
+# suppliers.xlsx. Its rows carry the suppliers' own Telegram links next to their
+# phone and Facebook page, so those channels can be scanned even when they are
+# not chats in the signed-in account. Until this import runs, a category scan
+# could only ever read the user's own chats.
+SUPPLIER_DIRECTORY_DB = ROOT / "telegram_research.db"
+SAMPLE_SOURCE_NOTE = "Sample data"
+
+
+def supplier_channel_sources():
+    """The guide's suppliers that publish a Telegram channel, as source rows."""
+    sources = []
+    warnings = []
+    if not SUPPLIER_DIRECTORY_DB.is_file():
+        return sources, ["The supplier guide database has not been imported yet."]
+    try:
+        with closing(sqlite3.connect(SUPPLIER_DIRECTORY_DB)) as connection:
+            connection.row_factory = sqlite3.Row
+            rows = connection.execute(
+                """SELECT supplier_name, category_sheet, category, phone, whatsapp,
+                          telegram, facebook, delivery
+                   FROM imported_suppliers"""
+            ).fetchall()
+    except sqlite3.Error as error:
+        return sources, [f"The supplier guide could not be read: {error}"]
+    seen = set()
+    skipped = 0
+    for row in rows:
+        handle = extract_telegram_handle(row["telegram"] or "")
+        if not handle:
+            skipped += 1
+            continue
+        key = handle.casefold()
+        if key in seen:
+            continue
+        seen.add(key)
+        notes = []
+        for label, value in (
+            ("Phone", row["phone"]),
+            ("WhatsApp", row["whatsapp"]),
+            ("Facebook", row["facebook"]),
+            ("Delivery", row["delivery"]),
+        ):
+            value = str(value or "").strip()
+            if value and value not in ("//", "-"):
+                notes.append(f"{label}: {value}")
+        sources.append(
+            {
+                "title": str(row["supplier_name"] or handle).strip(),
+                "username": handle,
+                "url": f"https://t.me/{handle}",
+                "category": str(row["category_sheet"] or "").strip() or "Uncategorised",
+                "subcategory": str(row["category"] or "").strip(),
+                "language": "",
+                "country": "Algeria",
+                "status": SOURCE_STATUS_ACTIVE,
+                "notes": " | ".join(notes),
+                "sheet_name": str(row["category_sheet"] or "").strip() or "suppliers",
+            }
+        )
+    if skipped:
+        warnings.append(
+            f"{skipped} supplier(s) publish only a phone, WhatsApp or Facebook page, "
+            "so they have no Telegram channel to scan."
+        )
+    return sources, warnings
+
+
+def import_supplier_channels():
+    """Import the guide's Telegram channels into the source database.
+
+    Safe to call on every start: sources are matched on their handle, so a
+    second run updates instead of duplicating. The placeholder rows that shipped
+    with the app are removed once real suppliers arrive, so a category scan
+    never reports the sample channels as the whole directory.
+    """
+    sources, warnings = supplier_channel_sources()
+    if not sources:
+        return {
+            "sources_added": 0,
+            "sources_updated": 0,
+            "warnings": warnings,
+        }
+    summary = store_sources(sources, warnings, "supplier-guide", len(sources))
+    with closing(connect_database()) as connection:
+        removed = connection.execute(
+            "DELETE FROM sources WHERE notes = ?", (SAMPLE_SOURCE_NOTE,)
+        ).rowcount
+        # A category with no suppliers left (the placeholder "Cat 1") would only
+        # show up as an empty option in the scan dialog.
+        connection.execute(
+            """
+            DELETE FROM source_categories
+            WHERE category_id NOT IN (
+                SELECT DISTINCT category_id FROM sources WHERE category_id IS NOT NULL
+            )
+            """
+        )
+        connection.commit()
+    summary["sample_sources_removed"] = removed
+    return summary
+
+
+def ensure_supplier_channels_imported():
+    """Import the guide's channels once, on a fresh install, at startup."""
+    try:
+        with closing(connect_database()) as connection:
+            real = connection.execute(
+                "SELECT COUNT(*) FROM sources WHERE COALESCE(notes, '') != ?",
+                (SAMPLE_SOURCE_NOTE,),
+            ).fetchone()[0]
+    except sqlite3.Error:
+        return None
+    if real:
+        return None
+    try:
+        return import_supplier_channels()
+    except (OSError, sqlite3.Error, ValueError) as error:
+        log_line(f"Could not import the supplier guide channels: {error}")
+        return None
 
 
 # ---- category-aware scanning ----------------------------------------------
@@ -1201,7 +1390,7 @@ def _telegram_chat_id_for_source(username="", title=""):
 def link_sources_to_chats():
     """Point every stored source at its Telegram chat id when it is loaded."""
     linked = 0
-    with closing(sqlite3.connect(DB_PATH)) as connection:
+    with closing(connect_database()) as connection:
         connection.row_factory = sqlite3.Row
         rows = connection.execute(
             "SELECT source_id, username, title, chat_id FROM sources"
@@ -1233,7 +1422,7 @@ def sources_for_category(category="", source_keys=None):
     if conditions:
         query += " WHERE " + " AND ".join(conditions)
     query += " ORDER BY title COLLATE NOCASE"
-    with closing(sqlite3.connect(DB_PATH)) as connection:
+    with closing(connect_database()) as connection:
         connection.row_factory = sqlite3.Row
         return [dict(row) for row in connection.execute(query, params)]
 
@@ -1292,7 +1481,7 @@ def record_source_scan_history(scan_id, chat_ids, category=""):
         return 0
     scanned_at = datetime.now(timezone.utc).isoformat()
     written = 0
-    with closing(sqlite3.connect(DB_PATH)) as connection:
+    with closing(connect_database()) as connection:
         connection.row_factory = sqlite3.Row
         for chat_id in chat_ids:
             stats = connection.execute(
@@ -1400,7 +1589,7 @@ def record_source_scan_history(scan_id, chat_ids, category=""):
 
 def category_source_metrics(category_name, scan_id=None):
     """Per-category counts for the channel tree: channels, products, suppliers."""
-    with closing(sqlite3.connect(DB_PATH)) as connection:
+    with closing(connect_database()) as connection:
         connection.row_factory = sqlite3.Row
         channels = connection.execute(
             """
@@ -1451,7 +1640,7 @@ def category_source_metrics(category_name, scan_id=None):
 
 def source_catalogue(scan_id=None):
     """Categories, their channels and their metrics, for the dashboard tree."""
-    with closing(sqlite3.connect(DB_PATH)) as connection:
+    with closing(connect_database()) as connection:
         connection.row_factory = sqlite3.Row
         categories = [
             dict(row)
@@ -1648,20 +1837,23 @@ def product_attributes_from_text(text, attributes=None):
     }
 
 
-def derive_offer_title(text, extracted_title=None):
+def derive_offer_title(text, extracted_title=None, channel_title="", signature=None):
+    """The product name one offer post is selling.
+
+    The post layout decides: an explicit product marker wins, then a descriptive
+    Latin-script line, then an Arabic line, with prices, delivery wording,
+    contact details and the shop's repeated signature line removed first. The
+    previous "first short line" rule named posts after the shop's own header
+    ("متراطيش لافار") or after a price ("85الف"), which put nonsense into the
+    Meta Ad Library query and made the ads look wrong.
+    """
     if extracted_title and extracted_title != "Review offer (product name not identified)":
         return extracted_title, False
-    for line in text.splitlines():
-        candidate = re.sub(r"https?://\S+|www\.\S+", "", line).strip(" \t-–—|")
-        if not candidate or len(candidate) > 100:
-            continue
-        if re.search(r"(?:wholesale|available|arrivage|prix|price|moq|minimum|"
-                     r"السعر|الجملة|متوفر)", candidate, re.IGNORECASE):
-            continue
-        if PRICE_RE.search(candidate) or WEIGHT_RE.search(candidate):
-            continue
-        if any(character.isalpha() for character in candidate):
-            return candidate, True
+    offer = offer_parser.parse_offer(
+        text, channel_title=channel_title, signature=signature or ()
+    )
+    if offer.named:
+        return offer.name, True
     return "Unidentified offer", True
 
 
@@ -1908,32 +2100,110 @@ def image_dhash_bytes(image_bytes):
         raise ValueError("The uploaded file is not a readable image.") from error
 
 
-def image_upload_hash_and_chat_ids(content_type, body):
+def download_image_bytes(url, limit=MAX_IMAGE_UPLOAD_BYTES, timeout=20):
+    """Fetch a remote product photo for image search.
+
+    Only http(s) URLs are accepted and the body is capped, so a pasted link can
+    never turn the local app into an open downloader. The bytes go through the
+    same dHash path as an uploaded file, which is what keeps a URL search and an
+    upload search comparable.
+    """
+    parsed = urlparse((url or "").strip())
+    if parsed.scheme not in ("http", "https") or not parsed.netloc:
+        raise ValueError("The image URL must start with http:// or https://.")
+    request = Request(
+        url,
+        headers={
+            "User-Agent": "Mozilla/5.0 (compatible; ProductScout/1.0)",
+            "Accept": "image/*",
+        },
+    )
+    try:
+        with urlopen(request, timeout=timeout) as response:
+            content_type = (response.headers.get("Content-Type") or "").split(";")[0].strip().lower()
+            if content_type and not (content_type.startswith("image/") or content_type == "application/octet-stream"):
+                raise ValueError("That URL does not serve an image.")
+            body = response.read(limit + 1)
+    except (HTTPError, URLError, TimeoutError, socket.timeout, OSError) as error:
+        raise ValueError(f"The image URL could not be downloaded: {error}") from error
+    if not body:
+        raise ValueError("The image URL returned an empty file.")
+    if len(body) > limit:
+        raise ValueError("Images must be smaller than 8 MB.")
+    return body
+
+
+def parse_date_window(start_date, end_date):
+    """Validate an inclusive YYYY-MM-DD window used by image search."""
+    def clean(value):
+        text = (value or "").strip()
+        if not text:
+            return None
+        try:
+            return date.fromisoformat(text).isoformat()
+        except ValueError as error:
+            raise ValueError("Dates must use the YYYY-MM-DD format.") from error
+
+    start = clean(start_date)
+    end = clean(end_date)
+    if start and end and start > end:
+        raise ValueError("The start date must be on or before the end date.")
+    return start, end
+
+
+def image_search_request(content_type, body):
+    """Parse one multipart image-search request.
+
+    Returns the perceptual hash, the selected chats and the optional inclusive
+    date window. ``image`` (a file) and ``image_url`` (a link) are alternatives;
+    the URL is downloaded server-side so browser CORS rules cannot block it.
+    """
     message = BytesParser(policy=policy.default).parsebytes(
         f"Content-Type: {content_type}\r\nMIME-Version: 1.0\r\n\r\n".encode("ascii")
         + body
     )
-    image_hash = None
+    image_bytes = None
+    image_url = ""
     chat_ids = []
+    start_date = ""
+    end_date = ""
     for part in message.iter_parts():
         if part.get_content_disposition() != "form-data":
             continue
         name = part.get_param("name", header="content-disposition")
         if name == "image" and part.get_filename():
-            image = part.get_payload(decode=True) or b""
-            if not image:
+            image_bytes = part.get_payload(decode=True) or b""
+            if not image_bytes:
                 raise ValueError("Choose a non-empty image file.")
-            if len(image) > MAX_IMAGE_UPLOAD_BYTES:
+            if len(image_bytes) > MAX_IMAGE_UPLOAD_BYTES:
                 raise ValueError("Images must be smaller than 8 MB.")
-            image_hash = image_dhash_bytes(image)
+        elif name == "image_url":
+            image_url = (part.get_content() or "").strip()
         elif name == "chat_ids":
             try:
                 chat_ids.extend(int(value) for value in (part.get_content() or "").split(",") if value.strip())
             except ValueError as error:
                 raise ValueError("Choose valid Telegram channels for image search.") from error
-    if image_hash is None:
+        elif name == "start_date":
+            start_date = (part.get_content() or "").strip()
+        elif name == "end_date":
+            end_date = (part.get_content() or "").strip()
+    if image_bytes is None and image_url:
+        image_bytes = download_image_bytes(image_url)
+    if image_bytes is None:
         raise ValueError("Choose an image file to search.")
-    return image_hash, list(dict.fromkeys(chat_ids))
+    start_date, end_date = parse_date_window(start_date, end_date)
+    return {
+        "image_hash": image_dhash_bytes(image_bytes),
+        "chat_ids": list(dict.fromkeys(chat_ids)),
+        "start_date": start_date,
+        "end_date": end_date,
+    }
+
+
+def image_upload_hash_and_chat_ids(content_type, body):
+    parsed = image_search_request(content_type, body)
+    return parsed["image_hash"], parsed["chat_ids"]
 
 
 def image_upload_hash(content_type, body):
@@ -1942,7 +2212,7 @@ def image_upload_hash(content_type, body):
 
 
 def load_product_history(product_key):
-    with closing(sqlite3.connect(DB_PATH)) as connection:
+    with closing(connect_database()) as connection:
         rows = connection.execute(
             """
             SELECT chat_id, message_id, message_date, views, reactions, comments, forwards
@@ -1976,7 +2246,7 @@ def load_product_history(product_key):
 
 
 def load_engagement_alerts(scan_id=None):
-    with closing(sqlite3.connect(DB_PATH)) as connection:
+    with closing(connect_database()) as connection:
         connection.row_factory = sqlite3.Row
         if scan_id:
             rows = connection.execute(
@@ -2118,6 +2388,17 @@ def _looks_like_concrete_product(name):
         return False
     if re.search(
         r"\b(free|images|photos|pic|picture|stock|download|gallery|lots? of|wallpaper)\b",
+        name,
+        flags=re.I,
+    ):
+        return False
+    # Placeholders and web-page furniture read like names but describe nothing:
+    # a scan once saved "Unnamed Up offers" as a product, which then went into
+    # the Ad Library query.
+    if re.search(
+        r"\b(unnamed|unidentified|review an offer|offers?|reviews?|customer service|"
+        r"sign in|log in|page not found|not found|homepage|home page|wholesale|gros)" 
+        r"\b|read customer service reviews",
         name,
         flags=re.I,
     ):
@@ -2396,7 +2677,7 @@ async def get_product_extractor():
     global _extractor, _extractor_load_task
     if _extractor is None:
         if _extractor_load_task is None:
-            model_name = setting("PRODUCT_NER_MODEL", MODEL_DEFAULT)
+            model_name = app_setting("product_ner_model", MODEL_DEFAULT)
             weight_path = MODEL_DIR / "pytorch_model.bin"
             config_path = MODEL_DIR / "config.json"
             if (
@@ -2426,7 +2707,7 @@ async def get_product_extractor():
 
 
 def get_model_download_status():
-    model_name = setting("PRODUCT_NER_MODEL", MODEL_DEFAULT)
+    model_name = app_setting("product_ner_model", MODEL_DEFAULT)
     if model_name != MODEL_DEFAULT:
         return {"model_download_bytes": None, "model_download_total": None}
     weight_path = MODEL_DIR / "pytorch_model.bin"
@@ -2464,7 +2745,7 @@ def start_job(message, coroutine_factory, kind=None):
             await coroutine_factory()
         except asyncio.CancelledError:
             if kind == "scan" and _active_scan_id:
-                with sqlite3.connect(DB_PATH) as connection:
+                with connect_database() as connection:
                     connection.execute(
                         """
                         UPDATE scans SET completed_at = ?, status = 'cancelled',
@@ -2504,7 +2785,7 @@ def start_job(message, coroutine_factory, kind=None):
         except Exception as error:
             detail = f"{type(error).__name__}: {error}"
             if kind == "scan" and _active_scan_id:
-                with sqlite3.connect(DB_PATH) as connection:
+                with connect_database() as connection:
                     connection.execute(
                         """
                         UPDATE scans SET completed_at = ?, status = 'failed'
@@ -2515,9 +2796,9 @@ def start_job(message, coroutine_factory, kind=None):
                 _active_scan_id = None
             with _state_lock:
                 _state.update(
-                    running=False, message="The operation failed.", error=detail, job_kind=None
+                    running=False,                    message="The operation failed.", error=detail, job_kind=None
                 )
-            print(detail, flush=True)
+            log_line(detail)
         else:
             with _state_lock:
                 stopped_image_search = (
@@ -2545,9 +2826,9 @@ def start_job(message, coroutine_factory, kind=None):
             detail = f"{type(exception).__name__}: {exception}"
             with _state_lock:
                 _state.update(
-                    running=False, message="The operation failed.", error=detail, job_kind=None
+                    running=False,                    message="The operation failed.", error=detail, job_kind=None
                 )
-            print(detail, flush=True)
+            log_line(detail)
 
     future.add_done_callback(failed_to_schedule)
     return True
@@ -2584,7 +2865,7 @@ async def load_chats():
 
 def image_index_status(search_hash=None):
     cutoff_date = (date.today() - timedelta(days=365)).isoformat()
-    with closing(sqlite3.connect(DB_PATH)) as connection:
+    with closing(connect_database()) as connection:
         total_photos = connection.execute(
             "SELECT COUNT(*) FROM telegram_image_index"
         ).fetchone()[0]
@@ -2643,24 +2924,34 @@ def image_index_status(search_hash=None):
     }
 
 
-def find_similar_telegram_images(image_hash, limit=30, chat_ids=None):
+def find_similar_telegram_images(image_hash, limit=30, chat_ids=None, start_date=None, end_date=None):
     uploaded_hash = int(image_hash, 16)
-    with closing(sqlite3.connect(DB_PATH)) as connection:
+    with closing(connect_database()) as connection:
         connection.row_factory = sqlite3.Row
         selected_ids = list(dict.fromkeys(chat_ids or []))
-        channel_filter = ""
-        params = ()
+        # One filter list keeps the chat filter and the date window additive, so
+        # "this photo, in these channels, between these two days" is a single
+        # query instead of post-filtering rows the caller already paid for.
+        conditions = []
+        params = []
         if selected_ids:
-            channel_filter = f" WHERE chat_id IN ({','.join('?' for _ in selected_ids)})"
-            params = tuple(selected_ids)
+            conditions.append(f"chat_id IN ({','.join('?' for _ in selected_ids)})")
+            params.extend(selected_ids)
+        if start_date:
+            conditions.append("substr(message_date, 1, 10) >= ?")
+            params.append(start_date)
+        if end_date:
+            conditions.append("substr(message_date, 1, 10) <= ?")
+            params.append(end_date)
+        whitelist = (" WHERE " + " AND ".join(conditions)) if conditions else ""
         candidates = connection.execute(
             f"""
             SELECT chat_id, product, supplier, chat_title, price, currency,
                 message_date, telegram_url, image_name, image_hash, product_key
-            FROM telegram_image_index{channel_filter}
+            FROM telegram_image_index{whitelist}
             ORDER BY message_date DESC
             """,
-            params,
+            tuple(params),
         ).fetchall()
     matches_by_chat = {}
     for row in candidates:
@@ -2677,7 +2968,7 @@ def find_similar_telegram_images(image_hash, limit=30, chat_ids=None):
 
 
 def seed_saved_telegram_images():
-    with closing(sqlite3.connect(DB_PATH)) as connection:
+    with closing(connect_database()) as connection:
         rows = connection.execute(
             """
             SELECT current.chat_id, current.message_id, current.product,
@@ -2705,7 +2996,7 @@ def seed_saved_telegram_images():
             try:
                 image_hash = image_dhash_bytes(image_path.read_bytes())
             except (OSError, ValueError) as error:
-                print(f"Could not index saved Telegram image {image_name}: {error}", flush=True)
+                log_line(f"Could not index saved Telegram image {image_name}: {error}")
                 continue
             connection.execute(
                 """
@@ -2770,7 +3061,7 @@ async def build_telegram_image_index(selected_chat_ids=None, search_hash=None):
                         message="Image indexing stopped. Your progress is saved; search again to resume.",
                     )
                 return
-            with closing(sqlite3.connect(DB_PATH)) as connection:
+            with closing(connect_database()) as connection:
                 progress = connection.execute(
                     """
                     SELECT cutoff_date, last_message_id, status, match_hash
@@ -2897,9 +3188,8 @@ async def build_telegram_image_index(selected_chat_ids=None, search_hash=None):
                                 try:
                                     sender = await message.get_sender()
                                 except RPCError as error:
-                                    print(
-                                        f"Could not read Telegram sender for message {message.id}: {error}",
-                                        flush=True,
+                                    log_line(
+                                        f"Could not read Telegram sender for message {message.id}: {error}"
                                     )
                                     sender = None
                                 supplier = (
@@ -2942,9 +3232,8 @@ async def build_telegram_image_index(selected_chat_ids=None, search_hash=None):
                                 ):
                                     match_found = True
                         except (OSError, ValueError, RPCError) as error:
-                            print(
-                                f"Could not index Telegram image in {entity.title}, message {message.id}: {error}",
-                                flush=True,
+                            log_line(
+                                f"Could not index Telegram image in {entity.title}, message {message.id}: {error}"
                             )
                     last_seen_id = message.id
                     if match_found:
@@ -3051,7 +3340,7 @@ async def extract_entities(text):
             current = f"{current} {word}".strip()
         if current:
             parts.append(current)
-    entity_label = setting("PRODUCT_ENTITY_LABEL", LABEL_DEFAULT).casefold()
+    entity_label = app_setting("product_entity_label", LABEL_DEFAULT).casefold()
     products = []
     attributes = {}
     attribute_labels = {
@@ -3101,9 +3390,93 @@ def telegram_image_extension(message):
     return extension if extension in (".jpg", ".jpeg", ".png", ".webp", ".gif") else ".jpg"
 
 
-async def run_scan(chat_ids, start_date, end_date, category=""):
+async def entity_for_source(client, row):
+    """Open one stored source, including channels the account never joined.
+
+    The supplier guide lists public channels by their t.me link. Telethon can
+    read a public channel's history from its username without joining it, which
+    is what lets a category scan read the suppliers' own pages instead of only
+    the chats that happen to be in this account.
+    """
+    handle = extract_telegram_handle(row.get("username") or "") or extract_telegram_handle(
+        row.get("telegram_url") or ""
+    )
+    if not handle:
+        return None
+    wanted = handle.casefold()
+    for entity in list(_chat_entities.values()):
+        if str(getattr(entity, "username", "") or "").casefold() == wanted:
+            return entity
+    try:
+        entity = await client.get_entity(handle)
+    except FloodWaitError as error:
+        if not await cancellable_delay(_scan_cancel, error.seconds):
+            return None
+        try:
+            entity = await client.get_entity(handle)
+        except (ValueError, RPCError, OSError):
+            return None
+    except (ValueError, RPCError, OSError):
+        return None
+    # Resolving a few hundred handles back to back is what Telegram throttles,
+    # so the loop is paced instead of bursting.
+    await asyncio.sleep(0.25)
+    return entity
+
+
+async def resolve_source_chat_ids(client, category="", source_keys=None):
+    """The chats one category or source selection should scan."""
+    rows = sources_for_category(category, source_keys)
+    chat_ids = []
+    unavailable = []
+    for row in rows:
+        if _scan_cancel.is_set():
+            break
+        chat_id = row.get("chat_id")
+        entity = _chat_entities.get(chat_id) if chat_id is not None else None
+        if entity is None:
+            entity = await entity_for_source(client, row)
+        if entity is None:
+            unavailable.append(
+                row.get("title") or row.get("username") or row.get("source_key")
+            )
+            continue
+        peer_id = utils.get_peer_id(entity)
+        _chat_entities[peer_id] = entity
+        if peer_id != chat_id:
+            with closing(connect_database()) as connection:
+                connection.execute(
+                    "UPDATE sources SET chat_id = ? WHERE source_id = ?",
+                    (peer_id, row["source_id"]),
+                )
+                connection.commit()
+        if peer_id not in chat_ids:
+            chat_ids.append(peer_id)
+    return {
+        "chat_ids": chat_ids,
+        "unavailable": unavailable,
+        "sources_considered": len(rows),
+    }
+
+
+async def run_scan(chat_ids, start_date, end_date, category="", source_keys=None):
     global _current_scan_id, _current_market, _active_scan_id
     client = await require_authorized_client()
+    if chat_ids is None:
+        update_job("Opening the supplier channels for this scan…")
+        resolved = await resolve_source_chat_ids(client, category, source_keys)
+        chat_ids = resolved["chat_ids"]
+        if not chat_ids:
+            raise ValueError(
+                ", ".join(resolved["unavailable"][:5])
+                + (
+                    " — none of the channels in that selection could be opened. "
+                    "Refresh Telegram, or tick the channels you want to scan."
+                    if resolved["unavailable"]
+                    else " That category has no supplier channels yet. Import the "
+                    "supplier guide, or tick channels from your own chats."
+                )
+            )
     scan_id = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%S%fZ")
     _current_scan_id = scan_id
     _active_scan_id = None
@@ -3124,7 +3497,7 @@ async def run_scan(chat_ids, start_date, end_date, category=""):
             cancel_requested=False,
         )
 
-    with sqlite3.connect(DB_PATH) as connection:
+    with connect_database() as connection:
         connection.execute(
             """
             INSERT INTO scans (
@@ -3169,19 +3542,59 @@ async def run_scan(chat_ids, start_date, end_date, category=""):
                     current_chat=entity.title,
                     message=f"Scanning chat {index} of {len(chat_ids)}: {entity.title}",
                 )
-            async for message in cancellable_telegram_messages(
-                client.iter_messages(entity, offset_date=range_end),
-                _scan_cancel,
-            ):
+            # Read the channel's posts for the window once, so the lines every
+            # post repeats (the shop's own signature) are known before any post
+            # is named. Letting that signature through is what used to make the
+            # channel header look like a product name.
+            chat_messages = []
+            try:
+                async for message in cancellable_telegram_messages(
+                    client.iter_messages(entity, offset_date=range_end),
+                    _scan_cancel,
+                ):
+                    if _scan_cancel.is_set():
+                        was_cancelled = True
+                        break
+                    if message.date and message.date.replace(tzinfo=timezone.utc) < range_start:
+                        break
+                    chat_messages.append(message)
+            except (RPCError, ValueError, OSError) as error:
+                # One channel the account cannot open (a private supplier group,
+                # a deleted handle) must not end the whole scan.
+                log_line(f"Skipped {entity.title}: {error}")
+            signatures = offer_parser.signature_lines(
+                [message.message or "" for message in chat_messages]
+            )
+            for message in chat_messages:
                 if _scan_cancel.is_set():
                     was_cancelled = True
-                    break
-                if message.date and message.date.replace(tzinfo=timezone.utc) < range_start:
                     break
                 scanned += 1
                 text = message.message or ""
                 details = parse_trade_details(text)
-                product_names, attributes = await extract_entities(text) if text else ([], {})
+                offer = (
+                    offer_parser.parse_offer(
+                        text,
+                        channel_title=entity.title,
+                        signature=signatures,
+                    )
+                    if text
+                    else offer_parser.Offer()
+                )
+                attributes = {}
+                product_names = [offer.name] if offer.named else []
+                if (
+                    not product_names
+                    and text
+                    and not is_arabic_dominant(text)
+                    and _extractor is not None
+                ):
+                    # The downloaded recognizer is only the fallback now: the
+                    # post layout names nearly every offer on its own.
+                    try:
+                        product_names, attributes = await extract_entities(text)
+                    except (RuntimeError, OSError, ValueError):
+                        product_names, attributes = [], {}
                 has_image = has_product_image(message)
                 review_candidate = not product_names and (
                     has_image
@@ -3189,9 +3602,13 @@ async def run_scan(chat_ids, start_date, end_date, category=""):
                     or details["moq"] is not None
                 )
                 if review_candidate:
-                    title, _ = derive_offer_title(text)
-                    product_names = [title]
+                    # Only a photo is left to go on, so the post keeps a neutral
+                    # placeholder until a reader names it; a price or the shop
+                    # signature must never become a product name.
+                    product_names = ["Unnamed offer"]
                 attributes = product_attributes_from_text(text, attributes)
+                if offer.brand:
+                    attributes.setdefault("brand", []).append(offer.brand)
                 if product_names:
                     matched += 1
                     sender = await message.get_sender()
@@ -3209,9 +3626,15 @@ async def run_scan(chat_ids, start_date, end_date, category=""):
                             message.id,
                             telegram_image_extension(message),
                         )
-                        await message.download_media(file=str(IMAGE_DIR / image_name))
-                        image_path = IMAGE_DIR / image_name
-                        if image_path.is_file():
+                        try:
+                            await message.download_media(file=str(IMAGE_DIR / image_name))
+                        except (RPCError, OSError) as error:
+                            log_line(
+                                f"Could not download the photo of message {message.id}: {error}"
+                            )
+                            image_name = None
+                        image_path = IMAGE_DIR / image_name if image_name else None
+                        if image_path and image_path.is_file():
                             image_hash = image_dhash_bytes(image_path.read_bytes())
                     reaction_count, comment_count, forward_count = telegram_engagement(message)
                     message_date = (
@@ -3236,7 +3659,11 @@ async def run_scan(chat_ids, start_date, end_date, category=""):
                                 # Unnamed offer posts are the ones that need a
                                 # reader; named ones are already identified.
                                 pending_identify.append(normalized)
-                        description = separate_description(product_name, text)
+                        description = (
+                            offer.description
+                            if offer.named and offer.description
+                            else separate_description(product_name, text)
+                        )
                         if (
                             reaction_count >= 100
                             and message_age is not None
@@ -3375,17 +3802,19 @@ async def run_scan(chat_ids, start_date, end_date, category=""):
             ),
         )
         connection.commit()
-    _current_market = setting("MARKET_COUNTRY", "United States")
+    _current_market = setting("MARKET_COUNTRY", app_setting("market_country"))
     update_job(
         f"Scan {'stopped' if was_cancelled else 'finished'}: checked {scanned} messages "
-        f"and flagged {matched} possible offer posts for review."
+        f"and found {matched} offer posts."
     )
     # Give the identification pool a bounded window to finish the products it
     # already holds, then let the post-scan sweeps pick up anything that is
     # still unnamed. A slow reader can therefore delay a product, never drop it.
     drain = finish_progressive_identification(scan_id)
-    start_photo_identification(scan_id)
-    start_web_research(scan_id)
+    if app_setting("auto_identify_photos"):
+        start_photo_identification(scan_id)
+    if app_setting("auto_web_research"):
+        start_web_research(scan_id)
     # Validation check: every product the scan wrote must be in the table. The
     # verdict is stored so the dashboard can show the last verified result
     # instead of an unverified count.
@@ -3410,6 +3839,124 @@ def market_country_code(market):
         "European Union": "DE",
         "Algeria": "DZ",
     }.get(market, "US")
+
+
+# ---- App settings -----------------------------------------------------------
+# These are the knobs that change how the app behaves, as opposed to the
+# credentials that only say where the data comes from. They live in a small
+# JSON file next to the other local state so they survive a restart.
+APP_SETTINGS_PATH = DATA_DIR / "app_settings.json"
+SCAN_MARKETS = ("United States", "United Kingdom", "European Union", "Algeria")
+APP_SETTINGS_DEFAULTS = {
+    "market_country": "United States",
+    "product_entity_label": LABEL_DEFAULT,
+    "product_ner_model": MODEL_DEFAULT,
+    "scan_lookback_days": 2,
+    "scan_category": "",
+    "auto_identify_photos": True,
+    "auto_meta_ads_lookup": True,
+    "auto_web_research": True,
+}
+APP_SETTINGS_BOOLS = (
+    "auto_identify_photos",
+    "auto_meta_ads_lookup",
+    "auto_web_research",
+)
+
+
+def load_app_settings():
+    """Read the local app settings, falling back to the defaults."""
+    values = dict(APP_SETTINGS_DEFAULTS)
+    try:
+        stored = json.loads(APP_SETTINGS_PATH.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return values
+    if not isinstance(stored, dict):
+        return values
+    for key, default in APP_SETTINGS_DEFAULTS.items():
+        if key not in stored:
+            continue
+        value = stored[key]
+        if isinstance(default, bool):
+            values[key] = bool(value)
+        elif isinstance(default, int):
+            try:
+                values[key] = int(value)
+            except (TypeError, ValueError):
+                continue
+        else:
+            values[key] = str(value)
+    return values
+
+
+def save_app_settings(payload):
+    """Validate and store the app settings, returning what was saved."""
+    global _extractor, _extractor_load_task, _loaded_ner_model
+    if not isinstance(payload, dict):
+        raise ValueError("Settings must be sent as a JSON object.")
+    values = dict(_app_settings)
+
+    market = str(payload.get("market_country", values["market_country"])).strip()
+    if market not in SCAN_MARKETS:
+        raise ValueError("Choose one of the listed markets.")
+    values["market_country"] = market
+
+    label = str(payload.get("product_entity_label", values["product_entity_label"])).strip()
+    if not re.fullmatch(r"[A-Za-z_]{1,40}", label):
+        raise ValueError("The entity label must be one word of letters.")
+    values["product_entity_label"] = label
+
+    model = str(payload.get("product_ner_model", values["product_ner_model"])).strip()
+    if not model or len(model) > 160:
+        raise ValueError("The model name is not valid.")
+    values["product_ner_model"] = model
+
+    try:
+        days = int(payload.get("scan_lookback_days", values["scan_lookback_days"]))
+    except (TypeError, ValueError):
+        raise ValueError("The scan look-back must be a number of days.")
+    if not 1 <= days <= 365:
+        raise ValueError("The scan look-back must be between 1 and 365 days.")
+    values["scan_lookback_days"] = days
+
+    values["scan_category"] = str(
+        payload.get("scan_category", values["scan_category"])
+    ).strip()[:120]
+    for key in APP_SETTINGS_BOOLS:
+        if key in payload:
+            values[key] = bool(payload[key])
+
+    APP_SETTINGS_PATH.write_text(json.dumps(values, indent=2), encoding="utf-8")
+    _app_settings.clear()
+    _app_settings.update(values)
+    if values["product_ner_model"] != _loaded_ner_model:
+        # The extractor is cached; drop it so the new model loads on the next scan.
+        _extractor = None
+        _extractor_load_task = None
+        _loaded_ner_model = values["product_ner_model"]
+    return dict(values)
+
+
+_app_settings = load_app_settings()
+_loaded_ner_model = _app_settings["product_ner_model"]
+
+
+def app_setting(key, default=None):
+    """One app setting, with the default when it is not set."""
+    value = _app_settings.get(key)
+    return APP_SETTINGS_DEFAULTS.get(key, default) if value is None else value
+
+
+def app_setting_categories():
+    """The source categories a scan can be limited to."""
+    try:
+        with closing(connect_database()) as connection:
+            rows = connection.execute(
+                "SELECT name FROM source_categories ORDER BY position, name COLLATE NOCASE"
+            ).fetchall()
+    except sqlite3.Error:
+        return []
+    return [str(row[0]) for row in rows if row[0]]
 
 
 # ---- Meta Ad Library country ------------------------------------------------
@@ -3448,7 +3995,7 @@ def load_meta_ad_settings():
     Falls back to the research market's country the first time, so an existing
     setup keeps behaving the way it did before this setting existed.
     """
-    default_country = market_country_code(setting("MARKET_COUNTRY", "United States"))
+    default_country = market_country_code(app_setting("market_country"))
     try:
         data = json.loads(META_AD_SETTINGS_PATH.read_text(encoding="utf-8"))
     except (OSError, ValueError):
@@ -3608,44 +4155,34 @@ def meta_ad_to_row(ad):
 
 
 def meta_query_for_product(product):
-    """Build a targeted Ad Library search string for an identified product.
+    """Build the Ad Library search string for an identified product.
 
-    The raw Telegram post title is usually wrong or only a fragment of the
-    real product (for example a gift-set photo reads as one item, a price
-    fragment survives the extractor, or a multi-brand listing is labeled
-    by the store). Searching the Ad Library on that raw text returns ads for
-    the wrong product. The identified product name, brand and extracted
-    specifications are much closer to the real product, so they become the
-    search terms.
-
-    Returns a single string ready to be truncated to 200 characters before
-    it is sent to the collector.
+    The Ad Library is a keyword search, so a long query (the whole supplier
+    title plus every captured specification) matches almost nothing and the
+    lookup looks broken. The query is therefore the product name cut to its
+    first words, with the brand put in front when the name does not already
+    contain it. The returned ads are then verified against the full name, brand
+    and variant words by ``score_meta_ad``, so precision comes from the scorer,
+    not from a long query.
     """
-    parts = []
-    name = str(product.get("product") or "").strip()
-    if name:
-        parts.append(name)
-    for key in ("brand", "category", "type"):
-        value = str(product.get(key) or "").strip()
-        if value:
-            parts.append(value)
-    specs = product.get("specs") or []
-    for spec in specs:
-        brand = str(spec.get("brand") or "").strip()
-        value = str(spec.get("value") or "").strip()
-        unit = str(spec.get("unit") or "").strip()
-        if brand and value:
-            parts.append(f"{brand} {value} {unit}".strip())
-        elif value:
-            parts.append(value)
-    for key in ("size", "weight", "moq"):
-        value = str(product.get(key) or "").strip()
-        if value:
-            parts.append(f"{key} {value}")
-    cleaned = [part for part in parts if part]
-    if not cleaned:
-        return str(product.get("product") or "").strip()
-    return " ".join(cleaned)
+    name = " ".join(str(product.get("product") or "").split())
+    brand = " ".join(str(product.get("brand") or "").split())
+    if not brand:
+        for spec in product.get("specs") or []:
+            candidate = " ".join(str(spec.get("brand") or "").split())
+            if candidate:
+                brand = candidate
+                break
+    words = [word for word in name.split() if word]
+    core = " ".join(words[:META_QUERY_MAX_WORDS])
+    if brand and brand.casefold() not in core.casefold():
+        core = f"{brand} {core}".strip()
+    return (core or name)[:200]
+
+
+# A keyword search that is too long matches nothing; everything after these
+# words is verified by the scorer instead of being sent to Meta.
+META_QUERY_MAX_WORDS = 8
 
 
 def fetch_meta_ads(product_name, max_results=None, product=None):
@@ -3670,18 +4207,30 @@ def fetch_meta_ads(product_name, max_results=None, product=None):
     country = _meta_ad_settings["country"]
     collector = meta_collector()
     rows = []
+    # A long product name can out-run the Ad Library's keyword search, so the
+    # strongest words are tried first and a shorter query is retried when the
+    # first one comes back empty. The returned ads are still verified against
+    # the full name, so a wider query cannot put the wrong product in the
+    # exact section.
+    queries = [query]
+    shorter = " ".join(query.split()[:3])
+    if shorter and shorter != query:
+        queries.append(shorter)
     try:
-        for ad in collector.search(
-            query=query,
-            country=country,
-            status="ACTIVE",
-            max_results=max_results,
-        ):
-            row = meta_ad_to_row(ad)
-            if not row["ad_id"]:
-                continue
-            rows.append(row)
-            if max_results and len(rows) >= max_results:
+        for attempt in queries:
+            for ad in collector.search(
+                query=attempt,
+                country=country,
+                status="ACTIVE",
+                max_results=max_results,
+            ):
+                row = meta_ad_to_row(ad)
+                if not row["ad_id"]:
+                    continue
+                rows.append(row)
+                if max_results and len(rows) >= max_results:
+                    break
+            if rows:
                 break
     except MetaAdsError as error:
         raise RuntimeError(f"Meta Ad Library lookup failed: {error}") from error
@@ -3733,7 +4282,7 @@ def competitor_urls_from_ads(ads, limit=AD_DESTINATION_LIMIT):
 def save_competitor_listing(scan_id, product_key, url, listing=None, error_text=""):
     """Store one competitor page result (price found, or the reason it failed)."""
     fetched_at = datetime.now(timezone.utc).isoformat()
-    with closing(sqlite3.connect(DB_PATH)) as connection:
+    with closing(connect_database()) as connection:
         if listing is None:
             connection.execute(
                 """
@@ -3777,7 +4326,7 @@ def save_competitor_listing(scan_id, product_key, url, listing=None, error_text=
 
 def collect_competitor_prices_from_ads(scan_id, product_key):
     """Follow the product's Meta ads to the advertiser pages and read prices."""
-    with closing(sqlite3.connect(DB_PATH)) as connection:
+    with closing(connect_database()) as connection:
         connection.row_factory = sqlite3.Row
         ads = [
             dict(row)
@@ -3859,7 +4408,7 @@ def identify_product(scan_id, product_key, name, method="typed", confidence=None
     new_key = normalize_product(identified_name)
     if not new_key:
         raise ValueError("Enter the product name so it can be identified.")
-    with closing(sqlite3.connect(DB_PATH)) as connection:
+    with closing(connect_database()) as connection:
         exists = connection.execute(
             "SELECT 1 FROM messages WHERE scan_id = ? AND normalized_product = ? LIMIT 1",
             (scan_id, product_key),
@@ -4147,7 +4696,7 @@ def product_image_choices(image_path, limit=4):
 
 
 def product_photo_candidates(scan_id, product_key):
-    with closing(sqlite3.connect(DB_PATH)) as connection:
+    with closing(connect_database()) as connection:
         rows = connection.execute(
             """SELECT image_name FROM messages
                WHERE scan_id = ? AND normalized_product = ?
@@ -4212,7 +4761,7 @@ def identify_product_from_image(scan_id, product_key, minimum_score=0.50, save=T
     returned, so the photo can be read first and the name confirmed before
     anything is saved.
     """
-    with closing(sqlite3.connect(DB_PATH)) as connection:
+    with closing(connect_database()) as connection:
         exists = connection.execute("SELECT 1 FROM messages WHERE scan_id = ? AND normalized_product = ? LIMIT 1",
             (scan_id, product_key),
         ).fetchone()
@@ -4319,7 +4868,7 @@ def pending_photo_candidates(scan_id):
     """Review candidates in one scan that still have a stored supplier photo."""
     if not scan_id:
         return []
-    with closing(sqlite3.connect(DB_PATH)) as connection:
+    with closing(connect_database()) as connection:
         rows = connection.execute(
             """SELECT normalized_product FROM messages
                WHERE scan_id = ? AND review_candidate = 1
@@ -4337,6 +4886,23 @@ def auto_identify_product(scan_id, product_key):
     names and page details; the local photo model only answers when the web
     cannot (offline, no results, or not enough agreement).
     """
+    match = image_match_candidate(scan_id, product_key)
+    if match:
+        try:
+            return {
+                "saved": True,
+                "key": identify_product(
+                    scan_id,
+                    product_key,
+                    match["name"],
+                    method="image-match",
+                    confidence=match["score"],
+                ),
+                "name": match["name"],
+                "score": match["score"],
+            }
+        except (LookupError, ValueError):
+            pass
     web_error = ""
     try:
         return identify_product_from_web(scan_id, product_key)
@@ -4425,7 +4991,7 @@ def run_photo_identification(scan_id, pending):
             unreadable=unreadable,
             message=message,
         )
-    if identified and not stopped_early:
+    if identified and not stopped_early and app_setting("auto_meta_ads_lookup"):
         # Newly named products can now be searched in the Ad Library.
         try:
             start_meta_ads_sync(scan_id, load_results())
@@ -4443,7 +5009,7 @@ def purge_weak_product_identifications():
     touching any name the user actually corrected or confirmed (those are
     current message product values, not stale low-confidence photo rows).
     """
-    with closing(sqlite3.connect(DB_PATH)) as connection:
+    with closing(connect_database()) as connection:
         # Photo rows that are too weak to have been a real save under the current
         # threshold. We keep any row whose product_key still matches a live message
         # product, because that means the user (or a later correct sweep) settled
@@ -4819,7 +5385,7 @@ def web_title_is_listicle(title):
 
 def web_research_query(scan_id, product_key):
     """The supplier's own words for this offer: the best web query there is."""
-    with closing(sqlite3.connect(DB_PATH)) as connection:
+    with closing(connect_database()) as connection:
         rows = connection.execute(
             """SELECT product, message_text FROM messages
                WHERE scan_id = ? AND normalized_product = ?
@@ -4899,7 +5465,7 @@ def pending_web_research(scan_id):
     """Products named from a photo that the web has not confirmed yet."""
     if not scan_id:
         return []
-    with closing(sqlite3.connect(DB_PATH)) as connection:
+    with closing(connect_database()) as connection:
         rows = connection.execute(
             """
             SELECT identification.product_key
@@ -4990,7 +5556,7 @@ def run_web_research(scan_id, pending):
         _web_research_state.update(
             running=False, identified=identified, failed=failed, message=message
         )
-    if identified:
+    if identified and app_setting("auto_meta_ads_lookup"):
         try:
             start_meta_ads_sync(scan_id, load_results())
         except Exception:
@@ -5014,7 +5580,7 @@ def web_research_summary(scan_id):
 
 def save_product_details(scan_id, product_key, source, model, details):
     """Store the researched product details shown on the product page."""
-    with closing(sqlite3.connect(DB_PATH)) as connection:
+    with closing(connect_database()) as connection:
         connection.execute(
             """
             INSERT INTO product_details (
@@ -5055,7 +5621,7 @@ def load_product_details(scan_id, product_key):
     """The stored AI description shown on the product page, if there is one."""
     if not scan_id or not product_key:
         return None
-    with closing(sqlite3.connect(DB_PATH)) as connection:
+    with closing(connect_database()) as connection:
         connection.row_factory = sqlite3.Row
         row = connection.execute(
             "SELECT * FROM product_details WHERE scan_id = ? AND product_key = ?",
@@ -5158,7 +5724,7 @@ def store_photo_embeddings(paths, vectors):
     """Cache the embeddings computed for photo files that exist on disk."""
     saved = 0
     now = datetime.now(timezone.utc).isoformat()
-    with closing(sqlite3.connect(DB_PATH)) as connection:
+    with closing(connect_database()) as connection:
         for path, vector in zip(paths, vectors):
             if vector is None:
                 continue
@@ -5180,7 +5746,7 @@ def store_photo_embeddings(paths, vectors):
 
 def pending_photo_embeddings():
     """Indexed Telegram photos that still need a cached embedding."""
-    with closing(sqlite3.connect(DB_PATH)) as connection:
+    with closing(connect_database()) as connection:
         rows = connection.execute(
             """
             SELECT i.image_name FROM telegram_image_index AS i
@@ -5200,7 +5766,7 @@ def pending_photo_embeddings():
 
 def photo_embedding_counts():
     """How much of the photo index has been read for visual matching."""
-    with closing(sqlite3.connect(DB_PATH)) as connection:
+    with closing(connect_database()) as connection:
         indexed = connection.execute(
             "SELECT COUNT(*) FROM photo_embeddings WHERE model_version = ?",
             (PHOTO_EMBEDDING_VERSION,),
@@ -5290,7 +5856,7 @@ def cosine_scores(query_vectors, candidate_vectors):
 
 def _ensure_message_photos_indexed():
     """Seed the photo index from stored scans, but only when rows are missing."""
-    with closing(sqlite3.connect(DB_PATH)) as connection:
+    with closing(connect_database()) as connection:
         missing = connection.execute(
             """
             SELECT COUNT(*) FROM messages AS m
@@ -5338,7 +5904,7 @@ def same_product_sellers(scan_id, product_key):
         )
         return result
     _ensure_message_photos_indexed()
-    with closing(sqlite3.connect(DB_PATH)) as connection:
+    with closing(connect_database()) as connection:
         connection.row_factory = sqlite3.Row
         listed = {
             (row[0], row[1])
@@ -5371,7 +5937,7 @@ def same_product_sellers(scan_id, product_key):
     # The product's own photos: cached embeddings when possible, computed now
     # otherwise, so the first open of a product page still matches visually.
     query_vectors = []
-    with closing(sqlite3.connect(DB_PATH)) as connection:
+    with closing(connect_database()) as connection:
         cached = dict(
             connection.execute(
                 """
@@ -5403,7 +5969,7 @@ def same_product_sellers(scan_id, product_key):
 
     embedded = {}
     if query_vectors:
-        with closing(sqlite3.connect(DB_PATH)) as connection:
+        with closing(connect_database()) as connection:
             for image_name, blob in connection.execute(
                 "SELECT image_name, embedding FROM photo_embeddings WHERE model_version = ?",
                 (PHOTO_EMBEDDING_VERSION,),
@@ -5480,7 +6046,7 @@ def same_product_sellers(scan_id, product_key):
 def save_meta_ads_lookup(scan_id, product_key, ads=None, error_text=""):
     fetched_at = datetime.now(timezone.utc).isoformat()
     status = "failed" if error_text else "ok"
-    with closing(sqlite3.connect(DB_PATH)) as connection:
+    with closing(connect_database()) as connection:
         connection.execute(
             "DELETE FROM meta_ads WHERE scan_id = ? AND product_key = ?",
             (scan_id, product_key),
@@ -5564,7 +6130,7 @@ def run_meta_ads_sync(scan_id, products):
     def lookup_one(product):
         if stop_early.is_set() or _meta_ads_cancel.is_set():
             return
-        with closing(sqlite3.connect(DB_PATH)) as connection:
+        with closing(connect_database()) as connection:
             cached = connection.execute(
                 "SELECT status FROM meta_ad_lookups WHERE scan_id = ? AND product_key = ?",
                 (scan_id, product["key"]),
@@ -5575,7 +6141,7 @@ def run_meta_ads_sync(scan_id, products):
                 save_meta_ads_lookup(scan_id, product["key"], ads=ads)
             except (RuntimeError, OSError, ValueError) as error:
                 save_meta_ads_lookup(scan_id, product["key"], error_text=str(error))
-                print(f"Meta Ad Library lookup failed for {product['product']}: {error}", flush=True)
+                log_line(f"Meta Ad Library lookup failed for {product['product']}: {error}")
                 if classify_meta_error(str(error))[0] in ("permission", "blocked", "expired"):
                     # Every remaining product would be refused the same way, so
                     # stop instead of spending the rest of the batch on refusals.
@@ -5681,7 +6247,7 @@ def start_meta_ads_sync(scan_id, products):
 
 
 def meta_ads_summary(scan_id):
-    with closing(sqlite3.connect(DB_PATH)) as connection:
+    with closing(connect_database()) as connection:
         counts = connection.execute(
             """
             SELECT COUNT(*),
@@ -5783,6 +6349,12 @@ PRODUCT_STATUS_LABELS = {
 EXACT_AD_MINIMUM_SCORE = 0.72
 SIMILAR_AD_MINIMUM_SCORE = 0.18
 
+# DINOv2 cosine between an ad creative and the product's own photos. Measured
+# on the stored scan photos: different photos of one offer sit above 0.80, while
+# unrelated products in the same category stay below 0.75. An ad whose creative
+# is below this is never filed under exact ads, however well its text matches.
+EXACT_AD_VISUAL_MINIMUM = 0.78
+
 _AD_MATCH_STOPWORDS = frozenset(
     word.casefold()
     for word in (
@@ -5801,7 +6373,7 @@ _PRODUCT_VARIANT_WORDS = frozenset(
 )
 
 
-def _match_tokens(text):
+def _tokenize(text):
     """Lower-cased, punctuation-free tokens worth matching on."""
     tokens = []
     for raw in re.findall(r"[a-z0-9]+", str(text or "").casefold()):
@@ -5809,6 +6381,21 @@ def _match_tokens(text):
             continue
         tokens.append(raw)
     return tokens
+
+
+@lru_cache(maxsize=1024)
+def _match_tokens_tuple(text):
+    """The same tokens as ``_match_tokens``, kept for reuse.
+
+    A product name is read once and then compared with every ad, so the tokens
+    of the short texts are kept rather than rebuilt.
+    """
+    return tuple(_tokenize(text))
+
+
+def _match_tokens(text):
+    """Lower-cased, punctuation-free tokens worth matching on."""
+    return list(_match_tokens_tuple(text))
 
 
 def product_match_profile(name, brand="", attributes=None):
@@ -5824,7 +6411,7 @@ def product_match_profile(name, brand="", attributes=None):
         if values:
             brand = values[0] if isinstance(values, (list, tuple)) else values
     brand = str(brand or "")
-    model_tokens = {token for token in tokens if any(ch.isdigit() for ch in token)}
+    model_tokens = {token for token in tokens if not token.isalpha()}
     variant_tokens = {token for token in tokens if token in _PRODUCT_VARIANT_WORDS}
     brand_tokens = set(_match_tokens(brand))
     name_tokens = [
@@ -5851,37 +6438,256 @@ def product_match_profile(name, brand="", attributes=None):
     }
 
 
-def score_meta_ad(profile, ad):
+def _near_model_tokens(hay_tokens, model_tokens):
+    """Ad tokens one character away from a product model token.
+
+    "Item1001" and "Item1002" differ by a single digit, and no amount of shared
+    brand or category wording makes them the same product. Only same-length
+    model tokens are compared, so prices, years and store ids in the ad copy
+    cannot trigger a conflict by accident.
+    """
+    conflicts = []
+    for token in hay_tokens:
+        if token.isalpha():
+            continue
+        for model in model_tokens:
+            if token == model or len(token) != len(model):
+                continue
+            if sum(1 for left, right in zip(token, model) if left != right) <= 1:
+                conflicts.append(token)
+                break
+    return sorted(set(conflicts))
+
+
+def identification_evidence(product):
+    """Explain how much trust the current product name has earned.
+
+    Four independent layers are checked instead of trusting one score:
+
+    * ``photo``   – the stored confidence when the name came from a photo read;
+    * ``post``    – how much of the name appears in the offer posts themselves;
+    * ``web``     – whether market research / competitor pages were found;
+    * ``directory`` – whether the supplier guide knows this category.
+
+    The result is a weighted agreement, not a probability that the name is
+    right: it says which layers agree, which one is missing, and what to do
+    next. A layer that has no data is left out instead of being scored as zero,
+    so a product is never punished for a source that was never asked.
+    """
+    name = str(product.get("product") or "")
+    profile = product_match_profile(name)
+    layers = []
+    weighted = 0.0
+    total_weight = 0.0
+
+    def add(layer, label, value, weight, detail, ok):
+        nonlocal weighted, total_weight
+        value = max(0.0, min(1.0, float(value or 0.0)))
+        weighted += value * weight
+        total_weight += weight
+        layers.append(
+            {
+                "layer": layer,
+                "label": label,
+                "value": round(value, 3),
+                "ok": bool(ok),
+                "detail": detail,
+            }
+        )
+
+    method = product.get("identification_method")
+    confidence = product.get("identification_confidence")
+    if method:
+        add(
+            "photo",
+            "Photo / name source",
+            confidence if confidence is not None else 0.5,
+            0.35,
+            f"Named with method '{method}'" + (
+                f" at {float(confidence):.0%}" if confidence is not None else ""
+            ),
+            bool(confidence is not None and float(confidence) >= _PHOTO_SAVE_MINIMUM_SCORE),
+        )
+    elif product.get("candidate_only"):
+        add(
+            "photo",
+            "Photo / name source",
+            0.0,
+            0.35,
+            "Unverified title straight from the offer post",
+            False,
+        )
+    else:
+        add(
+            "photo",
+            "Photo / name source",
+            0.6,
+            0.35,
+            "Name was typed or confirmed by hand",
+            True,
+        )
+
+    description = str(product.get("description") or "")
+    name_tokens = set(profile["name_tokens"])
+    post_tokens = set(_match_tokens(description))
+    if name_tokens:
+        shared = name_tokens & post_tokens
+        coverage = len(shared) / len(name_tokens)
+        add(
+            "post",
+            "Offer post wording",
+            coverage,
+            0.3,
+            (
+                "Post text repeats: " + ", ".join(sorted(shared)[:6])
+                if shared
+                else "The offer posts never spell out the name"
+            ),
+            coverage >= 0.6,
+        )
+
+    research = product.get("market_research") or {}
+    listings = product.get("competitor_listings") or []
+    research_fields = sum(
+        1
+        for key in ("trend_direction", "active_ads", "oldest_ad_days", "social_views", "notes")
+        if research.get(key) not in (None, "", "unknown")
+    )
+    web_value = min(1.0, (research_fields / 3.0) * 0.5 + (min(len(listings), 3) / 3.0) * 0.5)
+    add(
+        "web",
+        "Web + competitor pages",
+        web_value,
+        0.2,
+        f"{len(listings)} competitor page(s), {research_fields} research field(s) recorded",
+        web_value >= 0.5,
+    )
+
+    directory = product.get("directory_suppliers") or []
+    if directory:
+        best = max(float(item.get("score") or 0) for item in directory)
+        add(
+            "directory",
+            "Supplier directory",
+            best,
+            0.15,
+            f"{len(directory)} supplier(s) in the guide match this category",
+            best >= 0.45,
+        )
+
+    score = round(weighted / total_weight, 3) if total_weight else 0.0
+    if score >= 0.75:
+        verdict = "High agreement"
+    elif score >= 0.5:
+        verdict = "Partial agreement"
+    else:
+        verdict = "Needs review"
+    next_step = {
+        "High agreement": "Safe to look up the product's ads.",
+        "Partial agreement": "Confirm the model from the photo or the web before spending research time.",
+        "Needs review": "The name is not corroborated yet - read the photo, or type the exact model.",
+    }[verdict]
+    return {
+        "confidence": round(score * 100, 1),
+        "verdict": verdict,
+        "next_step": next_step,
+        "layers": layers,
+        "warning": "Evidence agreement, not a guarantee: confirm the model before buying or advertising.",
+    }
+
+
+@lru_cache(maxsize=2048)
+def _ad_match_tokens(
+    creative_title,
+    creative_text,
+    page_name,
+    link_url,
+    link_caption,
+    snapshot_url,
+):
+    """The wording of one Ad Library row, read once and reused for every product.
+
+    The same ad is compared with many products, so its wording is read once
+    instead of being re-read for every comparison. Only what the comparison
+    needs is kept: the joined tokens (for the exact product-name test), the
+    tokens that carry a digit (model numbers), the variant words, and the
+    creative tokens that carry a digit.
+    """
+    haystack = " ".join(
+        str(value or "")
+        for value in (
+            creative_title,
+            creative_text,
+            page_name,
+            link_url,
+            link_caption,
+            snapshot_url,
+        )
+    )
+    hay_tokens = _tokenize(haystack)
+    normalized_hay = " ".join(hay_tokens)
+    digit_tokens = frozenset(token for token in hay_tokens if not token.isalpha())
+    variant_present = frozenset(
+        token for token in hay_tokens if token in _PRODUCT_VARIANT_WORDS
+    )
+    creative_tokens = _tokenize(
+        " ".join(
+            str(value or "") for value in (creative_title, creative_text, link_caption)
+        )
+    )
+    creative_digits = frozenset(
+        token for token in creative_tokens if not token.isalpha()
+    )
+    return normalized_hay, digit_tokens, variant_present, creative_digits
+
+
+def score_meta_ad(profile, ad, visual_score=None):
     """Score one Ad Library row against one product.
 
-    Returns ``{"level", "score", "reasons", "missing"}``. ``level`` is
+    Returns ``{"level", "score", "reasons", "missing", "visual"}``. ``level`` is
     ``"exact"`` when the ad names this product, ``"similar"`` when it shares
     real evidence with it (brand, keywords, packaging wording) and
     ``"unrelated"`` when the only thing it shares is the category.
-    """
-    haystack = " ".join(
-        str(ad.get(key) or "")
-        for key in (
-            "creative_title",
-            "creative_text",
-            "page_name",
-            "link_url",
-            "link_caption",
-            "snapshot_url",
-        )
-    )
-    hay_tokens = set(_match_tokens(haystack))
-    normalized_hay = " ".join(_match_tokens(haystack))
 
-    missing_models = sorted(profile["model_tokens"] - hay_tokens)
-    ad_variants = hay_tokens & _PRODUCT_VARIANT_WORDS
-    extra_variants = sorted(ad_variants - profile["variant_tokens"])
-    missing_variants = sorted(profile["variant_tokens"] - hay_tokens)
+    ``visual_score`` is the DINOv2 cosine between the ad creative and the
+    product photos. When it was measured and falls below
+    ``EXACT_AD_VISUAL_MINIMUM`` the ad is demoted to similar even if its text
+    names the product, because a different picture is a different offer. ``None``
+    means "not checked", which never changes the verdict.
+    """
+    if visual_score is None:
+        visual_score = ad.get("visual_score")
+    if visual_score is not None:
+        try:
+            visual_score = float(visual_score)
+        except (TypeError, ValueError):
+            visual_score = None
+    normalized_hay, digit_tokens, variant_present, creative_digits = _ad_match_tokens(
+        ad.get("creative_title"),
+        ad.get("creative_text"),
+        ad.get("page_name"),
+        ad.get("link_url"),
+        ad.get("link_caption"),
+        ad.get("snapshot_url"),
+    )
+    # The tokens of the ad, joined with single spaces, so a whole token can be
+    # found in the wording without keeping every token of the ad in memory.
+    hay_text = " " + normalized_hay + " "
+
+    missing_models = sorted(profile["model_tokens"] - digit_tokens)
+    # Model tokens are taken from the creative wording only: a model number that
+    # appears in a tracking URL or in the advertiser's page id says nothing about
+    # which product the ad sells.
+    conflicting_models = _near_model_tokens(creative_digits, profile["model_tokens"])
+    extra_variants = sorted(variant_present - profile["variant_tokens"])
+    missing_variants = sorted(profile["variant_tokens"] - variant_present)
     brand_required = bool(profile["brand_tokens"])
-    brand_hit = brand_required and profile["brand_tokens"] <= hay_tokens
+    brand_hit = brand_required and all(
+        (" " + token + " ") in hay_text for token in profile["brand_tokens"]
+    )
 
     name_tokens = profile["name_tokens"]
-    matched = [token for token in name_tokens if token in hay_tokens]
+    matched = [token for token in name_tokens if (" " + token + " ") in hay_text]
     coverage = len(matched) / len(name_tokens) if name_tokens else 0.0
     full_name = " ".join(_match_tokens(profile["name"]))
     full_hit = len(full_name) > 3 and full_name in normalized_hay
@@ -5897,12 +6703,17 @@ def score_meta_ad(profile, ad):
     if full_hit:
         score = min(1.0, score + 0.15)
 
+    # A checked creative that does not look like the product blocks the exact
+    # section regardless of how well the wording matches.
+    visual_conflict = visual_score is not None and visual_score < EXACT_AD_VISUAL_MINIMUM
     exact = (
         score >= EXACT_AD_MINIMUM_SCORE
         and not missing_models
+        and not conflicting_models
         and not extra_variants
         and not missing_variants
         and (brand_hit or not brand_required)
+        and not visual_conflict
     )
 
     reasons = []
@@ -5915,11 +6726,22 @@ def score_meta_ad(profile, ad):
             reasons.append(f"Brand confirmed: {profile['brand']}")
         if matched:
             reasons.append("Product keywords: " + ", ".join(matched[:5]))
+        if visual_score is not None:
+            reasons.append(f"Creative image matches the product ({visual_score:.2f})")
     else:
+        if visual_conflict:
+            reasons.append(
+                f"Creative image does not match this product ({visual_score:.2f})"
+            )
         if extra_variants:
             reasons.append("Different variant of the same line: " + ", ".join(extra_variants))
         if missing_variants:
             reasons.append("Does not name the product variant: " + ", ".join(missing_variants))
+        if conflicting_models:
+            reasons.append(
+                "Names a different model of the same line: "
+                + ", ".join(f"'{token}' not '{' '.join(sorted(profile['model_tokens']))}'" for token in conflicting_models[:3])
+            )
         if missing_models:
             reasons.append("Different model, does not name: " + ", ".join(missing_models))
         if brand_hit:
@@ -5947,6 +6769,8 @@ def score_meta_ad(profile, ad):
         "score": round(score, 3),
         "reasons": reasons,
         "missing": missing_models + missing_variants + extra_variants,
+        "visual": None if visual_score is None else round(visual_score, 3),
+        "visual_checked": visual_score is not None,
     }
 
 
@@ -5975,6 +6799,70 @@ def classify_product_ads(profile, ads):
         else:
             similar.append(row)
     return exact, similar
+
+
+def verify_ad_visuals(scan_id, product_key, limit=12, database=None):
+    """Measure each ad creative against this product's own photos.
+
+    The score stored per ad is the best DINOv2 cosine between the creative and
+    any stored photo of the offer. Only ads that have not been checked yet are
+    processed, so the call is cheap to repeat: it finishes the backlog and stops.
+    A creative that cannot be downloaded is skipped, never scored 0.0, so a
+    network failure cannot demote an ad out of the exact section.
+    """
+    database = database or DB_PATH
+    photos = vision_api.product_photos(scan_id, product_key, limit=4, database=database)
+    if not photos:
+        return {
+            "checked": 0,
+            "skipped": 0,
+            "reason": "This product has no stored photos to compare a creative against.",
+        }
+    with closing(connect_database(database)) as connection:
+        rows = connection.execute(
+            """SELECT ad_id, image_url, thumbnail_url FROM meta_ads
+            WHERE scan_id = ? AND product_key = ? AND visual_score IS NULL
+              AND (COALESCE(image_url, '') != '' OR COALESCE(thumbnail_url, '') != '')
+            LIMIT ?
+            """,
+            (scan_id, product_key, limit),
+        ).fetchall()
+    if not rows:
+        return {"checked": 0, "skipped": 0, "reason": "Every creative is already checked."}
+
+    photo_vectors = [vector for vector in product_vision.embed_images(photos) if vector]
+    if not photo_vectors:
+        return {"checked": 0, "skipped": len(rows), "reason": "The product photos could not be read."}
+
+    checked, skipped, samples = 0, 0, []
+    for ad_id, image_url, thumbnail_url in rows:
+        url = str(image_url or thumbnail_url or "").strip()
+        try:
+            creative = download_image_bytes(url, limit=4 * 1024 * 1024)
+            vector = product_vision.embed_image(creative)
+        except Exception:
+            skipped += 1
+            continue
+        if not vector:
+            skipped += 1
+            continue
+        score = max(
+            sum(a * b for a, b in zip(vector, photo_vector)) for photo_vector in photo_vectors
+        )
+        with closing(connect_database(database)) as connection:
+            connection.execute(
+                "UPDATE meta_ads SET visual_score = ? WHERE scan_id = ? AND product_key = ? AND ad_id = ?",
+                (round(float(score), 4), scan_id, product_key, ad_id),
+            )
+            connection.commit()
+        checked += 1
+        samples.append({"ad_id": ad_id, "visual_score": round(float(score), 3)})
+    return {
+        "checked": checked,
+        "skipped": skipped,
+        "threshold": EXACT_AD_VISUAL_MINIMUM,
+        "samples": sorted(samples, key=lambda item: -item["visual_score"])[:5],
+    }
 
 
 def _median(values):
@@ -6156,7 +7044,7 @@ def scan_integrity(scan_id, products, deep=False):
     scan_status = ""
     counted = None
     if scan_id:
-        with closing(sqlite3.connect(DB_PATH)) as connection:
+        with closing(connect_database()) as connection:
             row = connection.execute(
                 "SELECT products_found, scanned_messages, status FROM scans WHERE scan_id = ?",
                 (scan_id,),
@@ -6215,9 +7103,8 @@ def verify_scan_integrity(scan_id):
     with _integrity_lock:
         _integrity_reports[scan_id] = report
     if not report["consistent"]:
-        print(
-            f"Scan integrity warning for {scan_id}: " + " ".join(report["issues"]),
-            flush=True,
+        log_line(
+            f"Scan integrity warning for {scan_id}: " + " ".join(report["issues"])
         )
     return report
 
@@ -6342,7 +7229,7 @@ def _offers_growth(offers, midpoint_iso):
 
 def _chat_category_map():
     """Which category each linked Telegram chat belongs to."""
-    with closing(sqlite3.connect(DB_PATH)) as connection:
+    with closing(connect_database()) as connection:
         connection.row_factory = sqlite3.Row
         rows = connection.execute(
             """
@@ -6365,7 +7252,7 @@ def _new_suppliers_since(scan_id, supplier_names, lookback=5):
     names = [name for name in supplier_names if name]
     if not names or not scan_id:
         return []
-    with closing(sqlite3.connect(DB_PATH)) as connection:
+    with closing(connect_database()) as connection:
         connection.row_factory = sqlite3.Row
         earlier = connection.execute(
             """
@@ -6391,7 +7278,7 @@ def _source_leaderboard(scan_id, limit=12):
     """Per-channel performance for the selected scan, best first."""
     if not scan_id:
         return []
-    with closing(sqlite3.connect(DB_PATH)) as connection:
+    with closing(connect_database()) as connection:
         connection.row_factory = sqlite3.Row
         rows = connection.execute(
             """
@@ -6481,7 +7368,7 @@ def platform_overview(scan_id=None, products=None, limit=8):
     scan_id = scan_id or _current_scan_id
     scan = None
     if scan_id:
-        with closing(sqlite3.connect(DB_PATH)) as connection:
+        with closing(connect_database()) as connection:
             connection.row_factory = sqlite3.Row
             scan = connection.execute(
                 """
@@ -6648,7 +7535,7 @@ def platform_overview(scan_id=None, products=None, limit=8):
         1 for product in products if product.get("status") == PRODUCT_STATUS_AWAITING_REVIEW
     )
     failed = sum(1 for product in products if product.get("status") == PRODUCT_STATUS_FAILED)
-    with closing(sqlite3.connect(DB_PATH)) as connection:
+    with closing(connect_database()) as connection:
         connection.row_factory = sqlite3.Row
         ads_collected = int(
             connection.execute(
@@ -6813,6 +7700,67 @@ def _photo_preview_is_save_worthy(preview):
     return score - runner_up >= PHOTO_IDENTIFICATION_MIN_MARGIN
 
 
+# Two Telegram uploads of the same supplier photo differ by a few perceptual
+# hash bits after re-compression; anything here is the same picture.
+IMAGE_MATCH_MAX_DISTANCE = 6
+
+
+def image_match_candidate(scan_id, product_key):
+    """Name a photo-only offer from an identical photo that already has a name.
+
+    Suppliers repost the same product photo across their groups, and the same
+    picture often appears somewhere the post also named the product. An
+    identical picture is stronger evidence than any vision-model guess, so this
+    runs before the readers: the name of a matching named photo is reused.
+    """
+    with closing(connect_database()) as connection:
+        connection.row_factory = sqlite3.Row
+        mine = [
+            row["image_hash"]
+            for row in connection.execute(
+                """SELECT image_hash FROM messages
+                   WHERE scan_id = ? AND normalized_product = ?
+                     AND COALESCE(image_hash, '') != ''""",
+                (scan_id, product_key),
+            )
+        ]
+        if not mine:
+            return None
+        known = connection.execute(
+            """SELECT image_hash, MAX(product) AS product, MAX(normalized_product) AS key
+               FROM messages
+               WHERE COALESCE(image_hash, '') != '' AND review_candidate = 0
+                 AND normalized_product != ?
+               GROUP BY image_hash""",
+            (product_key,),
+        ).fetchall()
+    best = None
+    best_distance = IMAGE_MATCH_MAX_DISTANCE + 1
+    for row in mine:
+        try:
+            query_hash = int(str(row), 16)
+        except (TypeError, ValueError):
+            continue
+        for candidate in known:
+            try:
+                distance = (query_hash ^ int(str(candidate["image_hash"]), 16)).bit_count()
+            except (TypeError, ValueError):
+                continue
+            if distance < best_distance:
+                best_distance = distance
+                best = candidate
+    if best is None or best_distance > IMAGE_MATCH_MAX_DISTANCE:
+        return None
+    name = str(best["product"] or "").strip()
+    if not _looks_like_concrete_product(name):
+        return None
+    return {
+        "name": name,
+        "score": 0.95 if best_distance == 0 else 0.85,
+        "distance": best_distance,
+    }
+
+
 def identify_product_progressive(scan_id, product_key):
     """Identify one product with both readers and cross-check their answers.
 
@@ -6834,6 +7782,30 @@ def identify_product_progressive(scan_id, product_key):
     back unsaved, with both reasons, so its row shows "Failed" instead of a
     confident wrong name.
     """
+    match = image_match_candidate(scan_id, product_key)
+    if match:
+        try:
+            new_key = identify_product(
+                scan_id,
+                product_key,
+                match["name"],
+                method="image-match",
+                confidence=match["score"],
+            )
+        except (LookupError, ValueError):
+            match = None
+        else:
+            return {
+                "saved": True,
+                "key": new_key,
+                "name": match["name"],
+                "score": match["score"],
+                "note": (
+                    "Named from an identical supplier photo that is already "
+                    "stored with this product name."
+                ),
+            }
+
     web_result = None
     web_error = ""
     try:
@@ -6930,6 +7902,18 @@ def identify_product_progressive(scan_id, product_key):
 
 def _save_progressive_name(scan_id, product_key, web_result, *, method, confidence, alternatives, note=""):
     """Save a cross-checked name and the details that came with it."""
+    if not _looks_like_concrete_product(web_result.get("name")):
+        # A reader can return a page title or a placeholder ("Unnamed Up
+        # offers"); saving that would send the ad lookup after nothing.
+        return {
+            "saved": False,
+            "key": product_key,
+            "name": web_result.get("name"),
+            "error": (
+                f"The reader answered “{web_result.get('name')}”, which does not "
+                "name a product, so it was not saved. Name it by hand instead."
+            ),
+        }
     new_key = identify_product(
         scan_id,
         product_key,
@@ -7053,7 +8037,7 @@ def run_identification_worker(scan_id, work_queue):
                 _identify_state["failed"][product_key] = str(error)[:300]
         finally:
             work_queue.task_done()
-        if saved:
+        if saved and app_setting("auto_meta_ads_lookup"):
             # A newly named product can be searched in the Ad Library right away,
             # so its ads land while the scan is still running.
             try:
@@ -7128,7 +8112,7 @@ def load_results():
     purge_weak_product_identifications_once(_current_scan_id or "")
     if not _current_scan_id:
         return []
-    with closing(sqlite3.connect(DB_PATH)) as connection:
+    with closing(connect_database()) as connection:
         connection.row_factory = sqlite3.Row
         scan = connection.execute(
             "SELECT start_date, end_date, market, extractor_version FROM scans WHERE scan_id = ?",
@@ -7467,9 +8451,63 @@ class Handler(BaseHTTPRequestHandler):
         length = int(self.headers.get("Content-Length", "0"))
         return json.loads(self.rfile.read(length) or b"{}")
 
+    def serve_react_app(self, path):
+        """Serve the built React app (web/dist) as a single-page application.
+
+        Unknown paths fall back to index.html so client-side navigation works;
+        when the app has not been built the error says how to build it instead of
+        returning a blank page.
+        """
+        app_dir = ROOT / "web" / "dist"
+        if not (app_dir / "index.html").is_file():
+            self.send_json(
+                {"error": "The React app is not built yet. Run: cd web && npm run build"}, 503
+            )
+            return
+        relative = path[len("/app") :] if path.startswith("/app") else path
+        target = (app_dir / relative.lstrip("/")).resolve()
+        try:
+            target.relative_to(app_dir.resolve())
+        except ValueError:
+            self.send_json({"error": "Not found"}, 404)
+            return
+        if not relative or not target.is_file():
+            target = app_dir / "index.html"
+        try:
+            body = target.read_bytes()
+        except OSError:
+            self.send_json({"error": "Not found"}, 404)
+            return
+        content_type = mimetypes.guess_type(str(target))[0] or "application/octet-stream"
+        if content_type.startswith("text/") or content_type in {
+            "application/javascript",
+            "application/json",
+        }:
+            content_type += "; charset=utf-8"
+        self.send_response(200)
+        self.send_header("Content-Type", content_type)
+        self.send_header("Content-Length", str(len(body)))
+        self.send_header("Cache-Control", "no-cache" if target.name == "index.html" else "public, max-age=31536000, immutable")
+        self.end_headers()
+        self.wfile.write(body)
+
     def do_GET(self):
         parsed = urlparse(self.path)
-        if parsed.path == "/":
+        if parsed.path == "/legacy" or parsed.path == "/legacy/":
+            page = (ROOT / "dashboard.html").read_bytes()
+            self.send_response(200)
+            self.send_header("Content-Type", "text/html; charset=utf-8")
+            self.send_header("Content-Length", str(len(page)))
+            self.end_headers()
+            self.wfile.write(page)
+        elif parsed.path == "/app" or parsed.path.startswith("/app/"):
+            self.serve_react_app(parsed.path)
+        elif parsed.path == "/":
+            # The React app is the dashboard now; the original page stays
+            # reachable at /legacy until every screen has a React equivalent.
+            if (ROOT / "web" / "dist" / "index.html").is_file():
+                self.serve_react_app("/app/")
+                return
             page = (ROOT / "dashboard.html").read_bytes()
             self.send_response(200)
             self.send_header("Content-Type", "text/html; charset=utf-8")
@@ -7508,6 +8546,33 @@ class Handler(BaseHTTPRequestHandler):
                 })
             except Exception as error:
                 self.send_json({"error": str(error)}, 500)
+        elif parsed.path == "/api/suppliers/matches":
+            query = parse_qs(parsed.query)
+            product_name = (query.get("product") or [""])[0].strip()
+            category = (query.get("category") or [""])[0].strip()
+            product_key = (query.get("key") or [""])[0].strip()
+            try:
+                if product_key and not product_name:
+                    product = next(
+                        (item for item in load_results() if item.get("key") == product_key),
+                        None,
+                    )
+                    if product is None:
+                        self.send_json({"error": "That product is not in the current scan."}, 404)
+                        return
+                    product_name = product.get("product") or product_key
+                    category = product.get("category") or category
+                if product_name:
+                    self.send_json(
+                        {
+                            "product": product_name,
+                            "matches": supplier_bridge.match_suppliers(product_name, category),
+                        }
+                    )
+                    return
+                self.send_json(supplier_bridge.coverage(load_results()))
+            except (sqlite3.Error, OSError, ValueError) as error:
+                self.send_json({"error": str(error)}, 500)
         elif parsed.path == "/api/settings":
             try:
                 self.send_json(
@@ -7528,6 +8593,16 @@ class Handler(BaseHTTPRequestHandler):
             state["chats_loaded"] = bool(_chat_entities)
             state.update(get_model_download_status())
             self.send_json(state)
+        elif parsed.path == "/api/version":
+            self.send_json({"version": "2.0.0", "interface": "react"})
+        elif parsed.path == "/api/app-settings":
+            self.send_json(
+                {
+                    "settings": dict(_app_settings),
+                    "markets": list(SCAN_MARKETS),
+                    "categories": app_setting_categories(),
+                }
+            )
         elif parsed.path == "/api/chats":
             if (
                 not _chat_entities
@@ -7555,8 +8630,10 @@ class Handler(BaseHTTPRequestHandler):
                 "job_kind": _state["job_kind"],
                 "error": _state["error"],
             }})
+        elif parsed.path == "/api/vision/status":
+            self.send_json(vision_api.status_payload(DB_PATH))
         elif parsed.path == "/api/scans":
-            with closing(sqlite3.connect(DB_PATH)) as connection:
+            with closing(connect_database()) as connection:
                 connection.row_factory = sqlite3.Row
                 scans = connection.execute(
                     """
@@ -7586,7 +8663,7 @@ class Handler(BaseHTTPRequestHandler):
             source_keys = [key for key in query.get("source", []) if key]
             self.send_json(resolve_scan_targets(category, source_keys))
         elif parsed.path == "/api/results":
-            with sqlite3.connect(DB_PATH) as connection:
+            with connect_database() as connection:
                 connection.row_factory = sqlite3.Row
                 scan = connection.execute(
                     "SELECT * FROM scans WHERE scan_id = ?",
@@ -7596,9 +8673,12 @@ class Handler(BaseHTTPRequestHandler):
             scan_id = scan["scan_id"] if scan else None
             score_product_opportunities(products, dict(scan) if scan else None)
             if scan_id:
-                start_meta_ads_sync(scan_id, products)
-                start_photo_identification(scan_id)
-                start_web_research(scan_id)
+                if app_setting("auto_meta_ads_lookup"):
+                    start_meta_ads_sync(scan_id, products)
+                if app_setting("auto_identify_photos"):
+                    start_photo_identification(scan_id)
+                if app_setting("auto_web_research"):
+                    start_web_research(scan_id)
             self.send_json(
                 {
                     "products": products,
@@ -7699,7 +8779,39 @@ class Handler(BaseHTTPRequestHandler):
                 )
                 if alert["product_key"] == product_key
             ]
+            # The supplier guide is matched on demand: the directory can be
+            # re-imported at any time without rewriting scan results.
+            try:
+                product["directory_suppliers"] = supplier_bridge.match_suppliers(
+                    product.get("product") or product_key,
+                    product.get("category") or "",
+                )
+            except (sqlite3.Error, OSError, ValueError):
+                product["directory_suppliers"] = []
             self.send_json({"product": product, "auto_identified": auto_identified})
+        elif parsed.path == "/api/product/evidence":
+            product_key = parse_qs(parsed.query).get("key", [""])[0]
+            product = next(
+                (item for item in load_results() if item.get("key") == product_key),
+                None,
+            )
+            if product is None:
+                self.send_json({"error": "That product is not in the current scan."}, 404)
+                return
+            try:
+                product["directory_suppliers"] = supplier_bridge.match_suppliers(
+                    product.get("product") or product_key,
+                    product.get("category") or "",
+                )
+            except (sqlite3.Error, OSError, ValueError):
+                product["directory_suppliers"] = []
+            self.send_json(
+                {
+                    "product": product.get("product"),
+                    "evidence": identification_evidence(product),
+                    "directory_suppliers": product["directory_suppliers"],
+                }
+            )
         elif parsed.path == "/api/product/similar-sellers":
             product_key = parse_qs(parsed.query).get("key", [""])[0]
             if not product_key:
@@ -7719,7 +8831,7 @@ class Handler(BaseHTTPRequestHandler):
             if not product_key:
                 self.send_json({"error": "Choose an identified product from the image results."}, 400)
                 return
-            with closing(sqlite3.connect(DB_PATH)) as connection:
+            with closing(connect_database()) as connection:
                 connection.row_factory = sqlite3.Row
                 indexed_posts = connection.execute(
                     """
@@ -7835,16 +8947,51 @@ class Handler(BaseHTTPRequestHandler):
                 self.send_json({"error": str(error)}, 400)
             return
 
+        if parsed.path == "/api/vision/identify":
+            content_length = int(self.headers.get("Content-Length", "0"))
+            if content_length <= 0 or content_length > 8 * 1024 * 1024 + 128 * 1024:
+                self.send_json({"error": "Image upload must be smaller than 8 MB."}, 413)
+                return
+            try:
+                request_data = vision_api.request_payload(
+                    self.headers.get("Content-Type", ""),
+                    self.rfile.read(content_length),
+                )
+                image_bytes = request_data["image"] or download_image_bytes(request_data["image_url"])
+            except (ValueError, LookupError, OSError) as error:
+                self.send_json({"error": str(error)}, 400)
+                return
+            try:
+                self.send_json(
+                    vision_api.identify_payload(
+                        image_bytes,
+                        scan_id=request_data["scan_id"],
+                        product_key=request_data["product_key"],
+                        database=DB_PATH,
+                        image_dir=IMAGE_DIR,
+                    )
+                )
+            except ValueError as error:
+                self.send_json({"error": str(error)}, 400)
+            except RuntimeError as error:
+                self.send_json({"error": str(error)}, 503)
+            except Exception as error:  # a bad photo must not kill the server
+                self.send_json({"error": f"Could not identify this photo: {error}"}, 500)
+            return
         if parsed.path == "/api/image-search":
             content_length = int(self.headers.get("Content-Length", "0"))
             if content_length <= 0 or content_length > MAX_IMAGE_UPLOAD_BYTES + 128 * 1024:
                 self.send_json({"error": "Image upload must be smaller than 8 MB."}, 413)
                 return
             try:
-                image_hash, selected_chat_ids = image_upload_hash_and_chat_ids(
+                request_data = image_search_request(
                     self.headers.get("Content-Type", ""),
                     self.rfile.read(content_length),
                 )
+                image_hash = request_data["image_hash"]
+                selected_chat_ids = request_data["chat_ids"]
+                start_date = request_data["start_date"]
+                end_date = request_data["end_date"]
             except (ValueError, LookupError) as error:
                 self.send_json({"error": str(error)}, 400)
                 return
@@ -7856,7 +9003,10 @@ class Handler(BaseHTTPRequestHandler):
                 self.send_json({"error": "Refresh Telegram and select channels that are currently available."}, 409)
                 return
             matches = find_similar_telegram_images(
-                image_hash, chat_ids=selected_chat_ids
+                image_hash,
+                chat_ids=selected_chat_ids,
+                start_date=start_date,
+                end_date=end_date,
             )
             matched_chat_ids = [match["chat_id"] for match in matches]
             index_status = image_index_status(image_hash)
@@ -7899,6 +9049,8 @@ class Handler(BaseHTTPRequestHandler):
                     "match_type": "perceptual image match",
                     "matches": matches,
                     "chat_ids": selected_chat_ids,
+                    "start_date": start_date,
+                    "end_date": end_date,
                 }
             )
             return
@@ -7955,7 +9107,7 @@ class Handler(BaseHTTPRequestHandler):
                 self.send_json({"error": "Wait until the current operation ends before resuming image indexing."}, 409)
                 return
             cutoff_date = (date.today() - timedelta(days=365)).isoformat()
-            with closing(sqlite3.connect(DB_PATH)) as connection:
+            with closing(connect_database()) as connection:
                 paused_chat_ids = [
                     row[0]
                     for row in connection.execute(
@@ -7989,7 +9141,7 @@ class Handler(BaseHTTPRequestHandler):
             self.send_json({"started": True}, 202)
         elif parsed.path == "/api/scans/select":
             scan_id = str(body.get("scan_id", "")).strip()
-            with closing(sqlite3.connect(DB_PATH)) as connection:
+            with closing(connect_database()) as connection:
                 exists = connection.execute(
                     "SELECT 1 FROM scans WHERE scan_id=?", (scan_id,)
                 ).fetchone()
@@ -7998,8 +9150,10 @@ class Handler(BaseHTTPRequestHandler):
                 return
             _current_scan_id = scan_id
             # Opening an older scan names its unnamed offers too.
-            start_photo_identification(scan_id)
-            start_web_research(scan_id)
+            if app_setting("auto_identify_photos"):
+                start_photo_identification(scan_id)
+            if app_setting("auto_web_research"):
+                start_web_research(scan_id)
             self.send_json({"selected": True})
         elif parsed.path == "/api/scans/rename":
             scan_id = str(body.get("scan_id", "")).strip()
@@ -8007,7 +9161,7 @@ class Handler(BaseHTTPRequestHandler):
             if not scan_id or not name:
                 self.send_json({"error": "Choose a saved operation and enter a name."}, 400)
                 return
-            with closing(sqlite3.connect(DB_PATH)) as connection:
+            with closing(connect_database()) as connection:
                 cursor = connection.execute(
                     "UPDATE scans SET name=? WHERE scan_id=? AND status != 'running'",
                     (name, scan_id),
@@ -8025,7 +9179,7 @@ class Handler(BaseHTTPRequestHandler):
             if _state["running"] and _active_scan_id == scan_id:
                 self.send_json({"error": "Stop the active scan before deleting it."}, 409)
                 return
-            with closing(sqlite3.connect(DB_PATH)) as connection:
+            with closing(connect_database()) as connection:
                 connection.execute("BEGIN")
                 exists = connection.execute(
                     "SELECT 1 FROM scans WHERE scan_id=?", (scan_id,)
@@ -8052,7 +9206,7 @@ class Handler(BaseHTTPRequestHandler):
             self.send_json({"deleted": True})
         elif parsed.path == "/api/scans/rerun":
             scan_id = str(body.get("scan_id", "")).strip()
-            with closing(sqlite3.connect(DB_PATH)) as connection:
+            with closing(connect_database()) as connection:
                 connection.row_factory = sqlite3.Row
                 saved = connection.execute(
                     "SELECT start_date, end_date, market, chat_ids_json FROM scans WHERE scan_id=?",
@@ -8086,6 +9240,7 @@ class Handler(BaseHTTPRequestHandler):
             if not isinstance(body, dict):
                 self.send_json({"error": "Settings must be sent as a JSON object."}, 400)
                 return
+
             telegram_changed = bool(
                 str(body.get("telegram_api_id", "")).strip()
                 or str(body.get("telegram_api_hash", "")).strip()
@@ -8124,6 +9279,28 @@ class Handler(BaseHTTPRequestHandler):
                     "meta_ad_country": _meta_ad_settings["country"],
                 }
             )
+        elif parsed.path == "/api/app-settings":
+            if not isinstance(body, dict):
+                self.send_json({"error": "Settings must be sent as a JSON object."}, 400)
+                return
+            if body.get("reset"):
+                try:
+                    APP_SETTINGS_PATH.write_text(
+                        json.dumps(APP_SETTINGS_DEFAULTS, indent=2), encoding="utf-8"
+                    )
+                except OSError as error:
+                    self.send_json({"error": str(error)}, 500)
+                    return
+                _app_settings.clear()
+                _app_settings.update(APP_SETTINGS_DEFAULTS)
+                self.send_json({"saved": True, "settings": dict(_app_settings)})
+                return
+            try:
+                saved = save_app_settings(body)
+            except ValueError as error:
+                self.send_json({"error": str(error)}, 400)
+                return
+            self.send_json({"saved": True, "settings": saved})
         elif parsed.path == "/api/meta-ads/test":
             if not meta_lookup_available():
                 self.send_json({"error": META_ADS_COLLECTOR_HINT}, 400)
@@ -8184,7 +9361,7 @@ class Handler(BaseHTTPRequestHandler):
             if trend not in ("unknown", "rising", "stable", "falling"):
                 self.send_json({"error": "Trend must be unknown, rising, stable, or falling."}, 400)
                 return
-            with sqlite3.connect(DB_PATH) as connection:
+            with connect_database() as connection:
                 exists = connection.execute(
                     "SELECT 1 FROM messages WHERE scan_id = ? AND normalized_product = ? LIMIT 1",
                     (scan_id, product_key),
@@ -8210,7 +9387,7 @@ class Handler(BaseHTTPRequestHandler):
             except ValueError as error:
                 self.send_json({"error": str(error)}, 400)
                 return
-            with sqlite3.connect(DB_PATH) as connection:
+            with connect_database() as connection:
                 connection.execute(
                     """
                     INSERT INTO research_evidence (
@@ -8249,7 +9426,7 @@ class Handler(BaseHTTPRequestHandler):
             if not scan_id or not product_key or not url:
                 self.send_json({"error": "Choose a scanned product and enter a competitor listing URL."}, 400)
                 return
-            with sqlite3.connect(DB_PATH) as connection:
+            with connect_database() as connection:
                 exists = connection.execute(
                     "SELECT 1 FROM messages WHERE scan_id = ? AND normalized_product = ? LIMIT 1",
                     (scan_id, product_key),
@@ -8354,6 +9531,16 @@ class Handler(BaseHTTPRequestHandler):
                 self.send_json({"error": str(error)}, 503)
                 return
             self.send_json(result)
+        elif parsed.path == "/api/meta-ads/verify-visuals":
+            product_key = str(body.get("product_key") or "").strip()
+            if not product_key or not _current_scan_id:
+                self.send_json({"error": "Open a product in a scan first."}, 400)
+                return
+            try:
+                self.send_json(verify_ad_visuals(_current_scan_id, product_key))
+            except Exception as error:
+                self.send_json({"error": f"Could not check the ad creatives: {error}"}, 500)
+            return
         elif parsed.path == "/api/meta-ads/diagnose":
             if not meta_lookup_available():
                 self.send_json(
@@ -8426,33 +9613,27 @@ class Handler(BaseHTTPRequestHandler):
                 category = str(body.get("category", "") or "")
                 source_keys = [str(key) for key in (body.get("source_ids") or [])]
                 chat_ids = [int(chat_id) for chat_id in (body.get("chat_ids") or [])]
-                market = body["market"]
+                market = str(body.get("market") or app_setting("market_country")).strip()
                 if start_date > end_date:
                     raise ValueError("The start date must be on or before the end date.")
                 if (category or source_keys) and not chat_ids:
-                    # Category-aware scanning: read the category's channels from
-                    # the internal source database instead of scanning everything.
-                    resolved = resolve_scan_targets(category, source_keys)
-                    chat_ids = resolved["chat_ids"]
-                    if not chat_ids:
-                        raise ValueError(
-                            "No channels in %s are available in this Telegram account yet. "
-                            "Refresh Telegram, or tick the channels you want to scan."
-                            % (f"the {category} category" if category else "that selection")
-                        )
-                if not chat_ids:
+                    # Category-aware scanning: the category's channels are read
+                    # from the internal source database (the imported supplier
+                    # guide), and opened by handle inside the scan, so a channel
+                    # does not have to be a dialog in this account to be read.
+                    chat_ids = None
+                if chat_ids is None and not (category or source_keys):
                     raise ValueError("Select at least one channel or group.")
-                if market not in (
-                    "United States",
-                    "United Kingdom",
-                    "European Union",
-                    "Algeria",
-                ):
+                if chat_ids is not None and not chat_ids:
+                    raise ValueError("Select at least one channel or group.")
+                if market not in SCAN_MARKETS:
                     raise ValueError("Select a supported market.")
             except (KeyError, TypeError, ValueError) as error:
                 self.send_json({"error": str(error) or "Please check the scan settings."}, 400)
                 return
-            if any(chat_id not in _chat_entities for chat_id in chat_ids):
+            if chat_ids is not None and any(
+                chat_id not in _chat_entities for chat_id in chat_ids
+            ):
                 self.send_json({"error": "Reload your chat list and select accessible chats."}, 400)
                 return
             os.environ["LAST_SCAN_START"] = start_date.isoformat()
@@ -8461,7 +9642,9 @@ class Handler(BaseHTTPRequestHandler):
             _scan_cancel.clear()
             if not start_job(
                 "Starting the scan…",
-                lambda: run_scan(chat_ids, start_date, end_date, category),
+                lambda: run_scan(
+                    chat_ids, start_date, end_date, category, source_keys
+                ),
                 kind="scan",
             ):
                 self.send_json({"error": "Another operation is already running."}, 409)
@@ -8474,13 +9657,31 @@ class Handler(BaseHTTPRequestHandler):
         print(f"Local dashboard: {format_string % args}", flush=True)
 
 
+def check_dashboard_version(url, timeout=3.0):
+    """Return (is_running, version_tuple) for the dashboard at *url*.
+    If the server answers but has no /api/version, treat it as legacy (0, 0).
+    """
+    try:
+        with urlopen(f"{url}/api/status", timeout=timeout) as resp:
+            body = resp.read().decode()
+        # Try to extract version from /api/version
+        try:
+            with urlopen(f"{url}/api/version", timeout=timeout) as ver_resp:
+                data = json.load(ver_resp)
+                v = data.get("version", "0.0.0")
+                parts = [int(x) for x in v.split(".")[:3]]
+                return True, tuple(parts)
+        except (HTTPError, URLError, ValueError, KeyError):
+            # No /api/version endpoint → legacy server
+            return True, (0, 0, 0)
+    except (HTTPError, URLError, OSError, ValueError):
+        return False, (0, 0, 0)
+
+
 def dashboard_responds(url, timeout=3.0):
     """True when a live dashboard answers on ``url``."""
-    try:
-        with urlopen(f"{url}/api/status", timeout=timeout) as response:
-            return getattr(response, "status", 200) == 200
-    except (HTTPError, URLError, OSError, ValueError):
-        return False
+    is_running, version = check_dashboard_version(url, timeout)
+    return is_running
 
 
 def port_is_taken(host, port, timeout=1.0):
@@ -8497,16 +9698,29 @@ def port_is_taken(host, port, timeout=1.0):
 def main(port=PORT):
     initialize_suppliers_database()
     initialize_database()
+    # A category scan reads the guide's supplier channels, so they must be in the
+    # source database before the first scan; a fresh install imports them here.
+    ensure_supplier_channels_imported()
     url = f"http://{HOST}:{port}"
     # A dashboard that never shut down keeps the port bound. On Windows a new
     # server can still bind over it, so "the server started" while the browser
     # talked to the dead copy and showed a blank page. Check first, and say
     # what is wrong instead of opening a browser that cannot load anything.
-    if dashboard_responds(url):
-        print(f"The dashboard is already running at {url}", flush=True)
-        print("Opened that window instead of starting a second copy.", flush=True)
-        webbrowser.open(url)
-        return
+    is_running, running_version = check_dashboard_version(url)
+    if is_running:
+        if running_version < (2, 0, 0):
+            print(
+                f"Old dashboard {running_version} detected at {url} – taking over the port.",
+                flush=True,
+            )
+            # Old server doesn't support /api/version or /app; fall through
+            # to the port-taken logic below so the user gets a chance to
+            # close it or use --port offset.
+        else:
+            print(f"The dashboard is already running at {url} (v{running_version})", flush=True)
+            print("Opened that window instead of starting a second copy.", flush=True)
+            webbrowser.open(url)
+            return
     if port_is_taken(HOST, port):
         print(
             f"Port {port} is held by a process that is not answering.",

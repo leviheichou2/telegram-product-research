@@ -2677,5 +2677,1021 @@ class SupplierGuideImportTests(unittest.TestCase):
         self.assertEqual(record["product_type"], "Textile")
 
 
+class SupplierBridgeTests(unittest.TestCase):
+    """Directory matching is a lead generator, so it must explain itself."""
+
+    ROWS = [
+        {
+            "id": 1,
+            "category_sheet": "vetements pour femmes",
+            "supplier_name": "Atelier Nour",
+            "category": "vetements pour femmes",
+            "product_type": "robes",
+            "phone": "0550111222",
+            "whatsapp": "",
+            "telegram": "",
+            "facebook": "",
+            "city": "El Eulma",
+            "notes": "",
+        },
+        {
+            "id": 2,
+            "category_sheet": "chaussures",
+            "supplier_name": "Shoe House",
+            "category": "chaussures",
+            "product_type": "",
+            "phone": "0660333444",
+            "whatsapp": "",
+            "telegram": "",
+            "facebook": "",
+            "city": "El Eulma",
+            "notes": "",
+        },
+        {
+            "id": 3,
+            "category_sheet": "cuisine et menage",
+            "supplier_name": "Top kitchen",
+            "category": "cuisine et menage",
+            "product_type": "ustensiles",
+            "phone": "",
+            "whatsapp": "",
+            "telegram": "",
+            "facebook": "",
+            "city": "",
+            "notes": "",
+        },
+    ]
+
+    def test_english_product_meets_the_french_sheet(self):
+        from supplier_bridge import match_suppliers
+
+        matches = match_suppliers(
+            "Women cotton dress", "vetements pour femmes", rows=self.ROWS
+        )
+        self.assertTrue(matches)
+        self.assertEqual(matches[0]["supplier"], "Atelier Nour")
+        self.assertIn("femme", matches[0]["matched_on"])
+        self.assertGreater(matches[0]["score"], 0.3)
+        self.assertEqual(matches[0]["phone"], "0550111222")
+
+    def test_category_sheet_alone_is_a_usable_lead(self):
+        from supplier_bridge import match_suppliers
+
+        matches = match_suppliers("Wireless charger", "chaussures", rows=self.ROWS)
+        self.assertEqual([item["supplier"] for item in matches], ["Shoe House"])
+        self.assertEqual(matches[0]["matched_on"], ["chaussure"])
+
+    def test_unrelated_product_returns_no_match(self):
+        from supplier_bridge import match_suppliers
+
+        self.assertEqual(
+            match_suppliers("Steel water bottle", "", rows=self.ROWS), []
+        )
+
+    def test_coverage_counts_only_products_with_a_lead(self):
+        from supplier_bridge import coverage
+
+        payload = coverage(
+            [
+                {"key": "a", "product": "Women dress", "category": "vetements pour femmes"},
+                {"key": "b", "product": "Steel water bottle", "category": ""},
+            ],
+            rows=self.ROWS,
+        )
+        self.assertEqual(payload["products_total"], 2)
+        self.assertEqual(payload["products_matched"], 1)
+        self.assertEqual(payload["directory_size"], 3)
+        self.assertEqual(
+            payload["products"]["a"]["matches"][0]["supplier"], "Atelier Nour"
+        )
+        self.assertEqual(payload["products"]["b"]["matches"], [])
+
+    def test_plural_and_accent_folding_keep_words_apart(self):
+        from supplier_bridge import expand, tokens
+
+        self.assertEqual(tokens("Robes"), {"robe"})
+        self.assertIn("robe", expand({"dress"}))
+
+
+class ImageSearchDateWindowTests(unittest.TestCase):
+    def test_date_window_is_validated_not_guessed(self):
+        self.assertEqual(
+            app.parse_date_window("2026-10-01", "2026-10-31"),
+            ("2026-10-01", "2026-10-31"),
+        )
+        self.assertEqual(app.parse_date_window("", ""), (None, None))
+        with self.assertRaises(ValueError):
+            app.parse_date_window("2026-11-01", "2026-10-01")
+        with self.assertRaises(ValueError):
+            app.parse_date_window("10/01/2026", "")
+
+    def test_multipart_request_reads_the_date_fields(self):
+        boundary = "date-boundary"
+        image_file = BytesIO()
+        Image.new("RGB", (90, 60), "white").save(image_file, format="PNG")
+        image_bytes = image_file.getvalue()
+        body = (
+            f"--{boundary}\r\n"
+            'Content-Disposition: form-data; name="start_date"\r\n\r\n'
+            "2026-10-01\r\n"
+            f"--{boundary}\r\n"
+            'Content-Disposition: form-data; name="end_date"\r\n\r\n'
+            "2026-10-05\r\n"
+            f"--{boundary}\r\n"
+            'Content-Disposition: form-data; name="chat_ids"\r\n\r\n'
+            "-1001234567890\r\n"
+            f"--{boundary}\r\n"
+            'Content-Disposition: form-data; name="image"; filename="sample.png"\r\n'
+            "Content-Type: image/png\r\n\r\n"
+        ).encode() + image_bytes + f"\r\n--{boundary}--\r\n".encode()
+
+        parsed = app.image_search_request(
+            f"multipart/form-data; boundary={boundary}", body
+        )
+        self.assertEqual(parsed["start_date"], "2026-10-01")
+        self.assertEqual(parsed["end_date"], "2026-10-05")
+        self.assertEqual(parsed["chat_ids"], [-1001234567890])
+        self.assertEqual(parsed["image_hash"], image_dhash_bytes(image_bytes))
+
+    def test_a_rejected_url_never_reaches_the_network(self):
+        boundary = "url-boundary"
+        body = (
+            f"--{boundary}\r\n"
+            'Content-Disposition: form-data; name="image_url"\r\n\r\n'
+            "ftp://example.com/a.jpg\r\n"
+            f"--{boundary}--\r\n"
+        ).encode()
+        with self.assertRaises(ValueError):
+            app.image_search_request(f"multipart/form-data; boundary={boundary}", body)
+
+    def test_reverse_image_search_respects_the_date_window(self):
+        image = Image.new("RGB", (100, 80), "white")
+        ImageDraw.Draw(image).rectangle((8, 8, 70, 65), fill="black")
+        buffer = BytesIO()
+        image.save(buffer, format="PNG")
+        image_bytes = buffer.getvalue()
+        query_hash = image_dhash_bytes(image_bytes)
+
+        temporary = tempfile.TemporaryDirectory()
+        original_db = app.DB_PATH
+        app.DB_PATH = Path(temporary.name) / "research.sqlite3"
+        try:
+            with closing(sqlite3.connect(app.DB_PATH)) as connection:
+                connection.execute(
+                    """
+                    CREATE TABLE telegram_image_index (
+                        chat_id INTEGER, message_id INTEGER, chat_title TEXT,
+                        product TEXT, supplier TEXT, price REAL, currency TEXT,
+                        message_date TEXT, telegram_url TEXT, image_name TEXT,
+                        image_hash TEXT, product_key TEXT DEFAULT ''
+                    )
+                    """
+                )
+                connection.executemany(
+                    """
+                    INSERT INTO telegram_image_index (
+                        chat_id, message_id, chat_title, product, supplier,
+                        price, currency, message_date, telegram_url, image_name, image_hash
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    """,
+                    [
+                        (
+                            -1001234567890, 1, "Channel A", "Old Post", "Supplier One",
+                            10, "USD", "2026-09-01", "https://t.me/a/1",
+                            "old.jpg", query_hash,
+                        ),
+                        (
+                            -1001234567891, 2, "Channel B", "New Post", "Supplier Two",
+                            12, "USD", "2026-10-04", "https://t.me/b/2",
+                            "new.jpg", query_hash,
+                        ),
+                    ],
+                )
+                connection.commit()
+
+            window = app.find_similar_telegram_images(
+                query_hash, start_date="2026-10-01", end_date="2026-10-31"
+            )
+            everything = app.find_similar_telegram_images(query_hash)
+        finally:
+            app.DB_PATH = original_db
+            temporary.cleanup()
+
+        self.assertEqual([match["product"] for match in window], ["New Post"])
+        self.assertEqual({match["product"] for match in everything}, {"Old Post", "New Post"})
+
+
+class MetaAdExactnessTests(unittest.TestCase):
+    """An ad for Item1002 may never be listed as an ad for Item1001."""
+
+    @staticmethod
+    def _ad(**fields):
+        row = {
+            "ad_id": fields.pop("ad_id", "ad-1"),
+            "page_name": "Store",
+            "creative_title": "",
+            "creative_text": "",
+            "link_caption": "",
+            "link_url": "",
+            "snapshot_url": "",
+        }
+        row.update(fields)
+        return row
+
+    def test_a_neighbouring_model_is_never_exact(self):
+        profile = app.product_match_profile("Item1001")
+        verdict = app.score_meta_ad(profile, self._ad(creative_text="Item1002 - free delivery"))
+        self.assertEqual(verdict["level"], "similar")
+        self.assertTrue(
+            any("different model" in reason.lower() for reason in verdict["reasons"]),
+            verdict["reasons"],
+        )
+
+    def test_the_same_model_stays_exact(self):
+        profile = app.product_match_profile("Item1001")
+        verdict = app.score_meta_ad(profile, self._ad(creative_text="Item1001 - free delivery"))
+        self.assertEqual(verdict["level"], "exact")
+
+    def test_a_model_in_a_link_does_not_create_a_false_conflict(self):
+        profile = app.product_match_profile("Item1001")
+        verdict = app.score_meta_ad(
+            profile,
+            self._ad(
+                creative_text="Item1001 - free delivery",
+                link_url="https://shop.example.com/track/1002?ref=feed",
+            ),
+        )
+        self.assertEqual(verdict["level"], "exact")
+
+    def test_classification_never_mixes_the_two_sections(self):
+        profile = app.product_match_profile("Item1001")
+        ads = [
+            self._ad(ad_id="a", creative_text="Item1001 bluetooth speaker"),
+            self._ad(ad_id="b", creative_text="Item1002 bluetooth speaker"),
+        ]
+        exact, similar = app.classify_product_ads(profile, ads)
+        self.assertEqual([row["ad_id"] for row in exact], ["a"])
+        self.assertEqual([row["ad_id"] for row in similar], ["b"])
+
+
+class AdVisualGateTests(unittest.TestCase):
+    """A creative that does not look like the product cannot be an exact ad."""
+
+    @staticmethod
+    def _ad(**fields):
+        row = {
+            "ad_id": fields.pop("ad_id", "ad-1"),
+            "page_name": "Store",
+            "creative_title": "",
+            "creative_text": "",
+            "link_caption": "",
+            "link_url": "",
+            "snapshot_url": "",
+        }
+        row.update(fields)
+        return row
+
+    def test_a_different_creative_demotes_a_textual_match(self):
+        profile = app.product_match_profile("Item1001")
+        verdict = app.score_meta_ad(
+            profile,
+            self._ad(creative_text="Item1001 bluetooth speaker"),
+            visual_score=0.41,
+        )
+        self.assertEqual(verdict["level"], "similar")
+        self.assertTrue(verdict["visual_checked"])
+        self.assertIn("does not match this product", " ".join(verdict["reasons"]))
+
+    def test_a_matching_creative_keeps_the_ad_exact(self):
+        profile = app.product_match_profile("Item1001")
+        verdict = app.score_meta_ad(
+            profile,
+            self._ad(creative_text="Item1001 bluetooth speaker"),
+            visual_score=0.93,
+        )
+        self.assertEqual(verdict["level"], "exact")
+        self.assertTrue(any("image matches" in reason for reason in verdict["reasons"]))
+
+    def test_an_unchecked_creative_never_changes_the_verdict(self):
+        profile = app.product_match_profile("Item1001")
+        verdict = app.score_meta_ad(profile, self._ad(creative_text="Item1001 bluetooth speaker"))
+        self.assertEqual(verdict["level"], "exact")
+        self.assertIsNone(verdict["visual"])
+        self.assertFalse(verdict["visual_checked"])
+
+    def test_the_stored_score_on_the_row_is_used(self):
+        profile = app.product_match_profile("Item1001")
+        exact, similar = app.classify_product_ads(
+            profile,
+            [self._ad(ad_id="a", creative_text="Item1001 speaker", visual_score=0.2)],
+        )
+        self.assertEqual(exact, [])
+        self.assertEqual([row["ad_id"] for row in similar], ["a"])
+
+    def test_a_product_without_photos_reports_why_it_cannot_check(self):
+        with tempfile.TemporaryDirectory() as folder:
+            database = Path(folder) / "scan.db"
+            with closing(sqlite3.connect(database)) as connection:
+                connection.execute(
+                    "CREATE TABLE messages (scan_id TEXT, normalized_product TEXT, image_name TEXT)"
+                )
+                connection.execute(
+                    "CREATE TABLE meta_ads (scan_id TEXT, product_key TEXT, ad_id TEXT, image_url TEXT, thumbnail_url TEXT, visual_score REAL)"
+                )
+                connection.commit()
+            result = app.verify_ad_visuals("scan", "key", database=database)
+        self.assertEqual(result["checked"], 0)
+        self.assertIn("no stored photos", result["reason"])
+
+
+class IdentificationEvidenceTests(unittest.TestCase):
+    def test_a_photo_name_corroborated_everywhere_is_high_agreement(self):
+        product = {
+            "key": "item1001",
+            "product": "Item1001 bluetooth speaker",
+            "description": "Item1001 bluetooth speaker, original, wholesale price",
+            "identification_method": "photo",
+            "identification_confidence": 0.82,
+            "candidate_only": False,
+            "market_research": {"trend_direction": "rising", "active_ads": 6, "notes": "seen on 2 pages"},
+            "competitor_listings": [{"title": "Item1001 speaker"}, {"title": "Item1001"}],
+            "directory_suppliers": [{"supplier": "Sound Shop", "score": 0.6}],
+        }
+        evidence = app.identification_evidence(product)
+        self.assertEqual(evidence["verdict"], "High agreement")
+        self.assertGreaterEqual(evidence["confidence"], 75)
+        self.assertEqual(
+            [layer["layer"] for layer in evidence["layers"]],
+            ["photo", "post", "web", "directory"],
+        )
+        self.assertTrue(all(layer["ok"] for layer in evidence["layers"]))
+
+    def test_an_unverified_title_is_flagged_for_review(self):
+        product = {
+            "key": "offer",
+            "product": "منتج جديد",
+            "description": "جملة",
+            "identification_method": None,
+            "identification_confidence": None,
+            "candidate_only": True,
+            "market_research": {},
+            "competitor_listings": [],
+            "directory_suppliers": [],
+        }
+        evidence = app.identification_evidence(product)
+        self.assertEqual(evidence["verdict"], "Needs review")
+        self.assertLess(evidence["confidence"], 50)
+        self.assertFalse(evidence["layers"][0]["ok"])
+        self.assertIn("not corroborated", evidence["next_step"])
+
+    def test_missing_layers_are_skipped_not_scored_as_zero(self):
+        product = {
+            "key": "typed",
+            "product": "Steel water bottle",
+            "description": "Steel water bottle 500ml",
+            "identification_method": "typed",
+            "identification_confidence": None,
+            "candidate_only": False,
+            "market_research": {},
+            "competitor_listings": [],
+            "directory_suppliers": [],
+        }
+        evidence = app.identification_evidence(product)
+        layers = {layer["layer"] for layer in evidence["layers"]}
+        self.assertNotIn("directory", layers)
+        self.assertIn("post", layers)
+        self.assertGreater(evidence["confidence"], 0)
+
+
+class ProductVisionTests(unittest.TestCase):
+    """The multi-layer identifier, exercised without any model on disk."""
+
+    def test_model_codes_ignore_prices_and_units(self):
+        import product_vision as vision
+
+        codes = vision.model_codes("Samsung SM-A546B 128GB - 25000 DA + 2 PCS")
+        self.assertIn("SM-A546B", codes)
+        self.assertNotIn("25000", codes)
+        self.assertNotIn("PCS", codes)
+
+    def test_packaging_signature_separates_pack_sizes(self):
+        import product_vision as vision
+
+        self.assertEqual(vision.packaging_signature("Cream 500ml"), frozenset({"500ml"}))
+        self.assertNotEqual(
+            vision.packaging_signature("2 pcs set"),
+            vision.packaging_signature("1 pc"),
+        )
+
+    def test_brand_comes_from_packaging_text(self):
+        import product_vision as vision
+
+        self.assertEqual(vision.extract_brand("PHILIPS blender 1500W"), "philips")
+        self.assertEqual(vision.extract_brand("no text at all"), "")
+
+    def test_missing_layers_are_skipped_by_the_fusion(self):
+        import product_vision as vision
+
+        layers = [
+            vision.Layer("visual", 1.0),
+            vision.Layer("ocr", 0.0, available=False),
+            vision.Layer("brand", 0.0, available=False),
+        ]
+        self.assertAlmostEqual(vision.fuse(layers), 1.0)
+        self.assertEqual(vision.fuse([vision.Layer("ocr", 0.0, available=False)]), 0.0)
+
+    def test_verdict_bands_are_ordered(self):
+        import product_vision as vision
+
+        self.assertEqual(vision.verdict_for(0.9), "exact")
+        self.assertEqual(vision.verdict_for(0.6), "likely")
+        self.assertEqual(vision.verdict_for(0.4), "possible")
+        self.assertEqual(vision.verdict_for(0.1), "unknown")
+
+    def test_conflicting_model_number_blocks_the_model_layer(self):
+        import product_vision as vision
+
+        candidate = {"name": "Samsung Galaxy A54 SM-A546B", "brand": "samsung"}
+        layers = {layer.name: layer for layer in vision.compare_text(candidate, "Samsung SM-A545F 8/256")}
+        self.assertEqual(layers["model"].score, 0.0)
+        self.assertIn("Different model", layers["model"].detail)
+        self.assertEqual(layers["brand"].score, 1.0)
+
+    def test_matching_model_and_packaging_score_full_confidence(self):
+        import product_vision as vision
+
+        candidate = {
+            "name": "Samsung Galaxy A54 SM-A546B 500ml",
+            "brand": "samsung",
+            "specs": "SM-A546B",
+        }
+        layers = {layer.name: layer for layer in vision.compare_text(candidate, "SAMSUNG SM-A546B 500ml")}
+        self.assertEqual(layers["model"].score, 1.0)
+        self.assertEqual(layers["packaging"].score, 1.0)
+
+    def test_vector_index_returns_the_nearest_key(self):
+        import product_vision as vision
+
+        index = vision.VectorIndex()
+        index.add(["dress", "phone", "blender"], [[1.0, 0.0], [0.0, 1.0], [0.7, 0.7]])
+        hits = index.search([0.99, 0.01], limit=2)
+        self.assertEqual(hits[0][0], "dress")
+        self.assertGreater(hits[0][1], hits[1][1])
+
+    def test_vector_index_skips_vectors_of_the_wrong_size(self):
+        import product_vision as vision
+
+        index = vision.VectorIndex()
+        added = index.add(["good", "bad"], [[1.0, 0.0], [1.0, 0.0, 0.0]])
+        self.assertEqual(added, 1)
+        self.assertEqual(index.keys, ["good"])
+
+    def test_text_only_identification_picks_the_best_candidate(self):
+        import product_vision as vision
+
+        candidates = {
+            "a": {"name": "Ceramic coffee mug", "brand": "", "specs": ""},
+            "b": {"name": "Philips blender 1500W", "brand": "philips", "specs": "HR2221"},
+        }
+        identity = vision.identify(
+            None,
+            candidates=candidates,
+            read_ocr=False,
+            ocr_text="PHILIPS HR2221 blender 1500W",
+        )
+        self.assertEqual(identity.product_key, "b")
+        self.assertGreater(identity.confidence, vision.POSSIBLE_CONFIDENCE)
+        self.assertEqual(identity.verdict, vision.verdict_for(identity.confidence))
+
+    def test_identification_without_any_signal_is_unknown(self):
+        import product_vision as vision
+
+        identity = vision.identify(None, candidates={}, read_ocr=False, ocr_text="")
+        self.assertEqual(identity.verdict, "unknown")
+        self.assertEqual(identity.alternatives, [])
+
+    def test_status_reports_installed_backends(self):
+        import product_vision as vision
+
+        status = vision.status()
+        self.assertIn(status["visual_backend"], {"dinov2", "clip", "none"})
+        self.assertIn(status["vector_backend"], {"faiss", "exact"})
+        self.assertIn("ocr", status)
+
+
+class VisionApiTests(unittest.TestCase):
+    """The DB glue and request parsing behind /api/vision/identify."""
+
+    def test_suppliers_are_split_into_three_tiers(self):
+        import vision_api
+
+        tiers = vision_api.rank_suppliers([
+            {"supplier": "A", "score": 0.7},
+            {"supplier": "B", "score": 0.5},
+            {"supplier": "C", "score": 0.31},
+        ])
+        self.assertEqual([row["tier"] for row in tiers], ["exact", "high", "similar"])
+        self.assertEqual(tiers[0]["tier_label"], "Exact supplier match")
+
+    def test_supplier_tiers_are_sorted_by_confidence(self):
+        import vision_api
+
+        tiers = vision_api.rank_suppliers([
+            {"supplier": "low", "score": 0.2},
+            {"supplier": "high", "score": 0.9},
+        ])
+        self.assertEqual([row["supplier"] for row in tiers], ["high", "low"])
+
+    def _multipart(self, parts):
+        boundary = "----test"
+        body = b""
+        for name, value, filename in parts:
+            body += f'--{boundary}\r\nContent-Disposition: form-data; name="{name}"'.encode()
+            if filename:
+                body += f'; filename="{filename}"\r\nContent-Type: image/png\r\n\r\n'.encode()
+                body += value
+            else:
+                body += b"\r\n\r\n" + value.encode()
+            body += b"\r\n"
+        body += f"--{boundary}--\r\n".encode()
+        return f"multipart/form-data; boundary={boundary}", body
+
+    def test_request_payload_reads_image_and_product_key(self):
+        import vision_api
+
+        content_type, body = self._multipart(
+            [("image", b"\x89PNG fake", "photo.png"), ("product_key", "dress", None)]
+        )
+        payload = vision_api.request_payload(content_type, body)
+        self.assertEqual(payload["image"], b"\x89PNG fake")
+        self.assertEqual(payload["product_key"], "dress")
+
+    def test_request_payload_rejects_an_empty_request(self):
+        import vision_api
+
+        content_type, body = self._multipart([("product_key", "dress", None)])
+        with self.assertRaises(ValueError):
+            vision_api.request_payload(content_type, body)
+
+    def test_unreadable_bytes_are_rejected(self):
+        import vision_api
+
+        with self.assertRaises(ValueError):
+            vision_api.identify_payload(b"definitely not an image")
+
+    def test_identify_payload_reports_the_reading_without_a_scan(self):
+        import io
+
+        import vision_api
+
+        buffer = io.BytesIO()
+        Image.new("RGB", (200, 120), "white").save(buffer, format="PNG")
+        payload = vision_api.identify_payload(buffer.getvalue())
+        self.assertIn("status", payload)
+        self.assertEqual(payload["indexed_products"], 0)
+        self.assertEqual(payload["verdict"], "unknown")
+        self.assertIn("elapsed_ms", payload)
+
+
+class AppSettingsTests(unittest.TestCase):
+    """The app settings that change how the collector behaves."""
+
+    def setUp(self):
+        self._directory = tempfile.TemporaryDirectory()
+        self.addCleanup(self._directory.cleanup)
+        self._original_path = app.APP_SETTINGS_PATH
+        self._original_values = dict(app._app_settings)
+        app.APP_SETTINGS_PATH = Path(self._directory.name) / "app_settings.json"
+        app._app_settings.clear()
+        app._app_settings.update(app.APP_SETTINGS_DEFAULTS)
+
+        def restore():
+            app.APP_SETTINGS_PATH = self._original_path
+            app._app_settings.clear()
+            app._app_settings.update(self._original_values)
+
+        self.addCleanup(restore)
+
+    def test_defaults_are_used_when_nothing_is_stored(self):
+        self.assertEqual(app.load_app_settings(), app.APP_SETTINGS_DEFAULTS)
+
+    def test_saved_settings_survive_a_reload(self):
+        app.save_app_settings(
+            {
+                "market_country": "Algeria",
+                "scan_lookback_days": 14,
+                "scan_category": "Cat 1",
+                "product_entity_label": "OFFER",
+                "auto_meta_ads_lookup": False,
+            }
+        )
+        reloaded = app.load_app_settings()
+        self.assertEqual(reloaded["market_country"], "Algeria")
+        self.assertEqual(reloaded["scan_lookback_days"], 14)
+        self.assertEqual(reloaded["scan_category"], "Cat 1")
+        self.assertEqual(reloaded["product_entity_label"], "OFFER")
+        self.assertFalse(reloaded["auto_meta_ads_lookup"])
+        self.assertTrue(reloaded["auto_web_research"])
+
+    def test_invalid_values_are_rejected(self):
+        for payload in (
+            {"market_country": "Mars"},
+            {"product_entity_label": "two words"},
+            {"product_ner_model": ""},
+            {"scan_lookback_days": 0},
+            {"scan_lookback_days": 400},
+            {"scan_lookback_days": "soon"},
+        ):
+            with self.subTest(payload=payload):
+                with self.assertRaises(ValueError):
+                    app.save_app_settings(payload)
+
+    def test_a_rejected_save_leaves_the_stored_settings_alone(self):
+        app.save_app_settings({"scan_lookback_days": 5})
+        with self.assertRaises(ValueError):
+            app.save_app_settings({"scan_lookback_days": 5, "market_country": "Mars"})
+        self.assertEqual(app.load_app_settings()["scan_lookback_days"], 5)
+        self.assertEqual(app.load_app_settings()["market_country"], "United States")
+
+    def test_app_setting_reads_the_current_values(self):
+        app.save_app_settings({"market_country": "United Kingdom"})
+        self.assertEqual(app.app_setting("market_country"), "United Kingdom")
+        self.assertEqual(app.app_setting("not_a_setting", "fallback"), "fallback")
+
+
+class AppSettingsEndpointTests(unittest.TestCase):
+    """GET and POST /api/app-settings over real HTTP."""
+
+    @classmethod
+    def setUpClass(cls):
+        from http.server import ThreadingHTTPServer
+        import threading
+
+        cls._server = ThreadingHTTPServer(("127.0.0.1", 0), app.Handler)
+        cls._server.daemon_threads = True
+        cls._thread = threading.Thread(target=cls._server.serve_forever, daemon=True)
+        cls._thread.start()
+        cls.base = "http://127.0.0.1:%d" % cls._server.server_address[1]
+
+    @classmethod
+    def tearDownClass(cls):
+        cls._server.shutdown()
+        cls._server.server_close()
+        cls._thread.join(timeout=5)
+
+    def setUp(self):
+        self._directory = tempfile.TemporaryDirectory()
+        self.addCleanup(self._directory.cleanup)
+        self._original_path = app.APP_SETTINGS_PATH
+        self._original_values = dict(app._app_settings)
+        app.APP_SETTINGS_PATH = Path(self._directory.name) / "app_settings.json"
+        app._app_settings.clear()
+        app._app_settings.update(app.APP_SETTINGS_DEFAULTS)
+
+        def restore():
+            app.APP_SETTINGS_PATH = self._original_path
+            app._app_settings.clear()
+            app._app_settings.update(self._original_values)
+
+        self.addCleanup(restore)
+
+    def _get(self, path):
+        from urllib.request import urlopen
+
+        with urlopen(self.base + path, timeout=10) as response:
+            return response.status, json.loads(response.read().decode("utf-8"))
+
+    def _post(self, path, payload):
+        from urllib.error import HTTPError
+        from urllib.request import Request, urlopen
+
+        request = Request(
+            self.base + path,
+            data=json.dumps(payload).encode("utf-8"),
+            headers={"Content-Type": "application/json"},
+            method="POST",
+        )
+        try:
+            with urlopen(request, timeout=10) as response:
+                return response.status, json.loads(response.read().decode("utf-8"))
+        except HTTPError as error:
+            return error.code, json.loads(error.read().decode("utf-8"))
+
+    def test_get_returns_the_settings_with_the_markets_and_categories(self):
+        status, payload = self._get("/api/app-settings")
+        self.assertEqual(status, 200)
+        self.assertEqual(payload["settings"]["market_country"], "United States")
+        self.assertIn("Algeria", payload["markets"])
+        self.assertIsInstance(payload["categories"], list)
+
+    def test_post_saves_the_settings_and_returns_them(self):
+        status, payload = self._post("/api/app-settings", {"scan_lookback_days": 9})
+        self.assertEqual(status, 200)
+        self.assertTrue(payload["saved"])
+        self.assertEqual(payload["settings"]["scan_lookback_days"], 9)
+
+        status, payload = self._get("/api/app-settings")
+        self.assertEqual(payload["settings"]["scan_lookback_days"], 9)
+
+    def test_post_rejects_an_invalid_market(self):
+        status, payload = self._post("/api/app-settings", {"market_country": "Mars"})
+        self.assertEqual(status, 400)
+        self.assertIn("error", payload)
+
+    def test_post_can_reset_the_settings_to_the_defaults(self):
+        self._post("/api/app-settings", {"scan_lookback_days": 30})
+        status, payload = self._post("/api/app-settings", {"reset": True})
+        self.assertEqual(status, 200)
+        self.assertEqual(payload["settings"]["scan_lookback_days"], 2)
+        self.assertEqual(payload["settings"], app.APP_SETTINGS_DEFAULTS)
+
+
+class OfferNameParsingTests(unittest.TestCase):
+    """An Algerian wholesale post must yield the product, not its decoration.
+
+    These are real post shapes from the El Eulma supplier channels: the shop
+    banner on the first line, the product after ``منتج``, then price and
+    delivery. Naming them wrongly is what put nonsense into the Meta Ad Library
+    query and returned ads for the wrong product.
+    """
+
+    SAFIR_POST = (
+        "🏃 متراطيش لافار 🔊\n"
+        "⭐ منتج tapis de bain et de douche antidérapant\n"
+        "🤏 السعر: 630 دج\n"
+        "👌 أسعار مغرية لأصحاب الكميات الكبيرة 👌\n"
+        "🎖 السفير للجملة العلمة | Safir Gros 🎖\n"
+        "🚚 التوصيل متوفر 69 ولاية"
+    )
+
+    def test_reads_the_product_after_the_arabic_marker(self):
+        offer = app.offer_parser.parse_offer(self.SAFIR_POST)
+
+        self.assertEqual(offer.name, "tapis de bain et de douche antidérapant")
+        self.assertGreaterEqual(offer.confidence, 0.5)
+
+    def test_never_names_a_post_after_the_shop_signature(self):
+        posts = [
+            self.SAFIR_POST,
+            "🏃 متراطيش لافار 🔊\n⭐ منتج mini hachoir électrique\nالسعر 1150 دج",
+            "🏃 متراطيش لافار 🔊\n⭐ منتج support de papier 2en1\nالسعر 1350 دج",
+            "🏃 متراطيش لافار 🔊\n⭐ منتج organisateur de couverts\nالسعر 1250 دج",
+        ]
+        signature = app.offer_parser.signature_lines(posts)
+
+        self.assertIn("متراطيش لافار", signature)
+        offer = app.offer_parser.parse_offer(
+            "🏃 متراطيش لافار 🔊\nCarcheur double batterie\nDisponible en gros",
+            channel_title="MGR STOR GROS",
+            signature=signature,
+        )
+        self.assertEqual(offer.name, "Carcheur double batterie")
+
+    def test_a_signature_only_post_is_not_named_after_it(self):
+        signature = app.offer_parser.signature_lines([
+            "متراطيش لافار\nالسعر 100 دج",
+            "متراطيش لافار\nالسعر 200 دج",
+            "متراطيش لافار\nالسعر 300 دج",
+            "متراطيش لافار\nالسعر 400 دج",
+        ])
+
+        offer = app.offer_parser.parse_offer(
+            "متراطيش لافار\nالسعر 630 دج", signature=signature
+        )
+
+        self.assertFalse(offer.named)
+
+    def test_price_and_boilerplate_posts_are_not_named(self):
+        for text in (
+            "85الف",
+            "✅200 الف جملة",
+            "Disponible",
+            "Wining products Disponible",
+            "Envoyez un message à Easy Shop sur WhatsApp. https://wa.me/213772521536",
+            "منتج للبيع بالجملة",
+        ):
+            with self.subTest(text=text):
+                self.assertFalse(app.offer_parser.parse_offer(text).named)
+
+    def test_reads_a_latin_product_line_without_a_marker(self):
+        offer = app.offer_parser.parse_offer(
+            "Carcheur double batterie \n72 V \nDisponible en gros \n1400 pcs disponible"
+        )
+
+        self.assertEqual(offer.name, "Carcheur double batterie")
+
+    def test_reads_a_short_arabic_product_name(self):
+        offer = app.offer_parser.parse_offer("Disponible \nلابوبو")
+
+        self.assertEqual(offer.name, "لابوبو")
+
+    def test_keeps_the_brand_when_the_post_states_one(self):
+        offer = app.offer_parser.parse_offer(
+            "⭐ produit: mini hachoir électrique 250W\nmarque: ChainHunt\nprix 1150 دج"
+        )
+
+        self.assertEqual(offer.name, "mini hachoir électrique 250W")
+        self.assertEqual(offer.brand, "ChainHunt")
+
+    def test_derive_offer_title_uses_the_new_reader(self):
+        title, inferred = derive_offer_title(self.SAFIR_POST)
+
+        self.assertEqual(title, "tapis de bain et de douche antidérapant")
+        self.assertTrue(inferred)
+        title, inferred = derive_offer_title("Disponible")
+        self.assertEqual(title, "Unidentified offer")
+        self.assertTrue(inferred)
+
+
+class IdentificationNameGuardTests(unittest.TestCase):
+    def test_placeholder_and_page_titles_are_not_product_names(self):
+        for name in (
+            "Unnamed Up offers",
+            "Review an Offer",
+            "Read Customer Service Reviews of ...",
+            "Page not found",
+        ):
+            with self.subTest(name=name):
+                self.assertFalse(app._looks_like_concrete_product(name))
+
+    def test_a_real_product_name_still_passes(self):
+        for name in ("Wireless Earbuds", "Mini hachoir électrique", "Littmann Classic 3"):
+            with self.subTest(name=name):
+                self.assertTrue(app._looks_like_concrete_product(name))
+
+
+class ImageMatchNamingTests(unittest.TestCase):
+    """An identical supplier photo already names the product; reuse it."""
+
+    def setUp(self):
+        self.temp_dir = tempfile.TemporaryDirectory(ignore_cleanup_errors=True)
+        self.addCleanup(self.temp_dir.cleanup)
+        self.original = app.DB_PATH
+        app.DB_PATH = Path(self.temp_dir.name) / "research.sqlite3"
+        self.addCleanup(lambda: setattr(app, "DB_PATH", self.original))
+        app.initialize_database()
+
+    def _row(self, scan_id, message_id, product_key, image_hash, candidate, product=None):
+        with closing(sqlite3.connect(app.DB_PATH)) as connection:
+            connection.execute(
+                """
+                INSERT INTO messages (
+                    scan_id, chat_id, message_id, product, normalized_product,
+                    supplier, chat_title, message_date, message_text, image_hash,
+                    review_candidate
+                ) VALUES (?, -1001234567890, ?, ?, ?, 'Supplier', 'Chat',
+                          '2026-10-01T00:00:00+00:00', '', ?, ?)
+                """,
+                (
+                    scan_id,
+                    message_id,
+                    product or product_key,
+                    product_key,
+                    image_hash,
+                    candidate,
+                ),
+            )
+            connection.commit()
+
+    def test_an_identical_photo_reuses_the_name_of_the_named_post(self):
+        self._row("old", 1, "wireless earbuds", "0f1e2d3c4b5a6978", 0)
+        self._row("new", 2, "review offer -1 2", "0f1e2d3c4b5a6978", 1)
+
+        match = app.image_match_candidate("new", "review offer -1 2")
+
+        self.assertIsNotNone(match)
+        self.assertEqual(match["name"], "wireless earbuds")
+        self.assertGreaterEqual(match["score"], 0.85)
+
+    def test_a_different_photo_is_not_matched(self):
+        self._row("old", 1, "wireless earbuds", "0f1e2d3c4b5a6978", 0)
+        self._row("new", 2, "review offer -1 2", "f0e1d2c3b4a59687", 1)
+
+        self.assertIsNone(app.image_match_candidate("new", "review offer -1 2"))
+
+
+class MetaQueryTests(unittest.TestCase):
+    def test_query_is_short_and_starts_with_the_brand(self):
+        query = app.meta_query_for_product(
+            {
+                "product": (
+                    "Tapis de bain antidérapant grande taille ultra doux "
+                    "premium quality 60x40 cm"
+                ),
+                "brand": "Safir",
+                "specs": [{"brand": "Safir", "value": "60x40", "unit": "cm"}],
+            }
+        )
+
+        self.assertTrue(query.startswith("Safir "))
+        # The brand plus the first words of the name, with the long tail dropped:
+        # a long keyword query is what made the Ad Library look empty.
+        self.assertLessEqual(len(query.split()), app.META_QUERY_MAX_WORDS + 1)
+        self.assertNotIn("quality", query)
+        self.assertNotIn("specs", query)
+
+    def test_query_does_not_repeat_the_brand_already_in_the_name(self):
+        query = app.meta_query_for_product(
+            {"product": "Safir tapis de bain", "brand": "Safir"}
+        )
+
+        self.assertEqual(query, "Safir tapis de bain")
+
+
+class SupplierGuideSourceImportTests(unittest.TestCase):
+    """The guide's suppliers become scannable channels, not just a contact list."""
+
+    def setUp(self):
+        self.temp_dir = tempfile.TemporaryDirectory(ignore_cleanup_errors=True)
+        self.addCleanup(self.temp_dir.cleanup)
+        self.database = Path(self.temp_dir.name) / "research.sqlite3"
+        self.directory = Path(self.temp_dir.name) / "telegram_research.db"
+        self.originals = (app.DB_PATH, app.SUPPLIER_DIRECTORY_DB, app._chat_entities)
+        app.DB_PATH = self.database
+        app.SUPPLIER_DIRECTORY_DB = self.directory
+        app._chat_entities = {}
+
+        def restore():
+            app.DB_PATH, app.SUPPLIER_DIRECTORY_DB, app._chat_entities = self.originals
+
+        self.addCleanup(restore)
+        app.initialize_database()
+        with closing(sqlite3.connect(self.directory)) as connection:
+            connection.execute(
+                """
+                CREATE TABLE imported_suppliers (
+                    id INTEGER PRIMARY KEY, category_sheet TEXT, supplier_name TEXT,
+                    category TEXT, phone TEXT, whatsapp TEXT, telegram TEXT,
+                    facebook TEXT, delivery TEXT
+                )
+                """
+            )
+            connection.executemany(
+                "INSERT INTO imported_suppliers VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                [
+                    (1, "sport", "Nine sport", "Article de sports", "782595159", "//",
+                     "https://t.me/eurlvistasport19", "//", "disponible"),
+                    (2, "sport", "Mens wears", "ملابس", "550111222", "//",
+                     "https://t.me/bfmenswear", "//", "disponible"),
+                    (3, "TEXTILE", "ADEN Tex 16", "TEXTILE", "550999888", "//",
+                     "https://www.instagram.com/aden.tex", "//", "//"),
+                    (4, "sport", "Nine sport again", "Article de sports", "782595159", "//",
+                     "https://t.me/eurlvistasport19", "//", "disponible"),
+                ],
+            )
+            connection.commit()
+
+    def test_imports_only_the_telegram_channels_and_keeps_the_categories(self):
+        summary = app.import_supplier_channels()
+
+        self.assertEqual(summary["sources_added"], 2)
+        with closing(sqlite3.connect(self.database)) as connection:
+            connection.row_factory = sqlite3.Row
+            rows = [
+                dict(row)
+                for row in connection.execute(
+                    "SELECT title, username, telegram_url, status FROM sources ORDER BY title"
+                )
+            ]
+            categories = [
+                row[0] for row in connection.execute("SELECT name FROM source_categories")
+            ]
+        self.assertEqual(
+            [(row["title"], row["username"]) for row in rows],
+            [("Mens wears", "bfmenswear"), ("Nine sport", "eurlvistasport19")],
+        )
+        self.assertTrue(all(row["status"] == "active" for row in rows))
+        self.assertEqual(sorted(categories), ["sport"])
+
+    def test_a_second_import_updates_instead_of_duplicating(self):
+        app.import_supplier_channels()
+        summary = app.import_supplier_channels()
+
+        self.assertEqual(summary["sources_added"], 0)
+        self.assertEqual(summary["sources_updated"], 2)
+        with closing(sqlite3.connect(self.database)) as connection:
+            self.assertEqual(
+                connection.execute("SELECT COUNT(*) FROM sources").fetchone()[0], 2
+            )
+
+    def test_sample_channels_are_replaced_by_the_real_suppliers(self):
+        with closing(sqlite3.connect(self.database)) as connection:
+            connection.execute(
+                "INSERT INTO sources (source_key, title, status, notes, imported_at) "
+                "VALUES ('title:sample', 'Supplier 1 - Category_1_AlEulma', 'active', "
+                "'Sample data', '2026-10-01T00:00:00+00:00')"
+            )
+            connection.commit()
+
+        app.import_supplier_channels()
+
+        with closing(sqlite3.connect(self.database)) as connection:
+            titles = [
+                row[0] for row in connection.execute("SELECT title FROM sources")
+            ]
+        self.assertNotIn("Supplier 1 - Category_1_AlEulma", titles)
+        self.assertEqual(len(titles), 2)
+
+
 if __name__ == "__main__":
     unittest.main()

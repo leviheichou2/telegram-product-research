@@ -215,7 +215,8 @@ identified product, not the post text.
 * **Image carousel.** The product hero shows the supplier photo and, where
   there are identical reposted photos, a thumbnail strip. A `“«” /
   `”` carousel nav (plus swipe left/right) lets the user page between the
-  product's photos and between the candidate reference images from then  photo catalogue, so the user can visually verify the name before the
+  product's photos and between the candidate reference images from the
+n  photo catalogue, so the user can visually verify the name before the
   Meta lookup runs.
 
 ### 11.5 Enriched Meta ad fields now render on the product page (`dashboard.html`)
@@ -254,3 +255,134 @@ c=MetaAdsCollector(); print([a.id for a in c.search(query='phone case', country=
 (`_collector_returning`) and build fake ads with `_fake_ad()`. An earlier
 version of the suite did not do this and hung for 10 minutes hitting the network
 — if the suite ever takes more than a few seconds, that is what has happened.
+
+---
+
+# Phase 2: UI, identification evidence and the supplier bridge
+
+## Supplier directory (`supplier_bridge.py`)
+
+The imported supplier guide lives in `telegram_research.db` (`imported_suppliers`,
+1,238 rows) and is now readable from the product side without touching the
+scanner:
+
+* `match_suppliers(name, category, limit=5)` scores directory rows on product
+  wording, row precision and the category sheet, and returns the shared terms in
+  `matched_on` so every lead is explainable.
+* `coverage(products)` matches a whole scan and answers the business question
+  "for how many scanned products do we already know a wholesaler?".
+* `SYNONYM_GROUPS` is the small English/French/Arabic bridge; extend it when a
+  new sheet vocabulary appears.
+
+Endpoints:
+
+* `GET /api/suppliers/matches?product=…&category=…` – one product.
+* `GET /api/suppliers/matches?key=…` – the same, resolved from the current scan.
+* `GET /api/suppliers/matches` – coverage for the current scan.
+* `GET /api/product/evidence?key=…` – identification evidence + directory matches.
+
+**Backward compatibility:** nothing in `app.py`'s Telegram path reads the
+directory. When the channel/API mechanism is replaced, only the *product* side of
+the bridge needs to survive.
+
+## Identification evidence
+
+`identification_evidence(product)` combines four independent layers (photo/name
+source, offer-post wording, web + competitor pages, supplier directory) into a
+weighted agreement with a verdict and a next step. It is rendered in the
+**Name verification** block on the profile. A layer with no data is skipped, not
+scored as zero, so a product is never punished for a source nobody asked for.
+
+## Meta ads exactness
+
+`score_meta_ad` now rejects an ad that names a *neighbouring* model
+(`Item1002` for `Item1001`) even when brand and keywords match, using
+`_near_model_tokens` on the creative wording only (a model number in a tracking
+URL never creates a false conflict). Conflicting ads stay in the *similar* section
+with the reason spelled out.
+
+## Image search
+
+* Upload by drop, click, clipboard paste or URL (`image_url` is downloaded
+  server-side, so CORS cannot block it).
+* `start_date` / `end_date` are validated by `parse_date_window` and applied in
+  the same SQL query as the channel filter.
+* Results render as cards (photo, product, channel, date, price, hash distance)
+  with a link into the product profile.
+
+## Sidebar / design system
+
+The sidebar is rebuilt with inline SVG icons, grouped navigation and a collapse
+toggle that remembers the choice in `localStorage` (`productscout.sidebar.collapsed`).
+`<style id="ui-modern">` is the single authoritative stylesheet for the new
+components; older rules stay for the untouched pages.
+
+Checks: `python .build/check_dom_ids.py` (every id the JS looks up exists) and
+`python .build/verify_http.py` (serves the real handler and asserts the new
+markup and endpoints).
+
+## Product page layout (phase 2)
+
+`page-product` is a product-detail layout: a sticky **profile top bar** (back,
+name, key, refresh), then a **hero** — gallery on the left, identity on the
+right with a dark **price hero** (lowest supplier price / sell price / margin),
+a metric grid (confidence, trend, posts, views, exact and similar ads,
+suppliers, cost) and the action row. Below sit the exact/similar ad carousels,
+then the evidence blocks ordered by how often they answer a real question:
+name verification, directory suppliers, images & offers, history, specs,
+identification, research, similar sellers, Meta library, competitors, alerts.
+Every block is backed by a real endpoint; none of the ids moved, so
+`python .build/check_dom_ids.py` still passes.
+
+## Product naming and supplier-channel scanning (phase 3)
+
+Scans used to read each supplier post with a "first short line" rule, so the
+channel's own banner ("متراطيش لافار"), a price ("85الف") or a CTA
+("Disponible") became the product name. That name is what the Meta Ad Library
+was searched for, which is why scans looked like they never identified anything
+and the ads never matched.
+
+`offer_parser.py` replaces that rule with a layout reader: emoji and decoration
+are stripped, lines that only carry price, stock, delivery, contact details or
+checkout wording are dropped, lines the channel repeats in most posts (its
+signature) are dropped by frequency, and the name comes from an explicit marker
+(`منتج` / `produit` / `article`), then a descriptive Latin-script line, then an
+Arabic line. A mixed line contributes its Latin phrase
+("للي وصانا على Littmann Classic 3" -> "Littmann Classic 3"), trailing price
+tails are cut ("Airpods max 205 alf" -> "Airpods max"), and brand lines
+(`marque:` / `ماركة:`) are stored as the brand. A post that names no product
+stays an unnamed offer instead of being mislabelled.
+
+`run_scan` reads a channel's posts for the window once, computes the signature
+set, then names each post; the downloaded NER model is now only the fallback for
+Latin-script posts the parser cannot name.
+
+Meta lookup: `meta_query_for_product` now sends a short brand-first keyword
+query (the Ad Library is a keyword search, so the old name+specs+category query
+returned nothing) and retries with three words when it comes back empty.
+Precision still comes from `score_meta_ad`, which splits the returned ads into
+exact and similar.
+
+Supplier pages: `import_supplier_channels()` reads the supplier guide's own
+Telegram links (`telegram_research.db` -> `imported_suppliers`) into `sources`
+and `source_categories` (115 channels across 19 categories on this install), and
+replaces the four placeholder "Sample data" rows. `/api/scan` now accepts a
+category without any `chat_ids`, and `run_scan` opens each source by handle with
+`client.get_entity`, so the supplier's public channel is read even when the
+account never joined it. One unreadable channel is logged and skipped instead of
+ending the scan.
+
+Identification only runs for offers that are still unnamed. Before the web and
+photo readers, `image_match_candidate` names a photo-only offer from an
+identical supplier photo that is already stored with a name (perceptual hash,
+6 bits), and `_looks_like_concrete_product` rejects page titles and placeholders
+("Unnamed Up offers", "Read Customer Service Reviews of ...") so they can never
+be saved.
+
+Measured on the stored history: 58.9% of stored text posts now get a real
+product name (previously effectively none: the names were the channel banner,
+prices or "Disponible"). A live scan of the `vetements pour homme` supplier
+category read 324 posts from three channels that are not in the account and
+named 58 products; the "parka" product then returned 36 active Algeria Meta ads
+(22 exact, 14 similar) with advertisers, creatives, landing pages and start
+dates.
